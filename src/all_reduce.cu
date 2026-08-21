@@ -52,15 +52,15 @@ void AllReduceGetBw(size_t count, int typesize, double sec, double* algBw, doubl
 }
 
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
-testResult_t AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs, pcclComm_t comm) {
+testResult_t AllReduceGetDevCommRequirements(int deviceImpl, pcclDevCommRequirements* reqs, pcclComm_t comm) {
   if (!reqs || !comm) return testInternalError;
 
-  ncclCommProperties_t commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
-  if (ncclCommQueryProperties(comm, &commProperties) != pcclSuccess) {
+  pcclCommProperties_t commProperties = PCCL_COMM_PROPERTIES_INITIALIZER;
+  if (pcclCommQueryProperties(comm, &commProperties) != pcclSuccess) {
     return testPcclError;
   }
 
-  if (deviceImpl > 0 && commProperties.nRanks != ncclTeamLsa(comm).nRanks) {
+  if (deviceImpl > 0 && commProperties.nRanks != pcclTeamLsa(comm).nRanks) {
     fprintf(stderr, "DeviceImplementation > 0 requires P2P connectivity across all "
                     "ranks. Not all ranks of this communicator have P2P connectivity.\n");
     return testInvalidUsage;
@@ -83,9 +83,9 @@ testResult_t AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirem
 }
 
 template <typename T>
-__global__ void allReduceLsaKernel(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
-  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
-  bar.sync(ncclCoopCta(), hggc::memory_order_acquire);
+__global__ void allReduceLsaKernel(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct pcclDevComm devComm) {
+  pcclLsaBarrierSession<pcclCoopCta> bar { pcclCoopCta(), devComm, pcclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
+  bar.sync(pcclCoopCta(), hggc::memory_order_acquire);
 
   const int rank = devComm.rank, nRanks = devComm.nRanks;
 
@@ -95,21 +95,21 @@ __global__ void allReduceLsaKernel(pcclWindow_t sendwin, size_t sendoffset, pccl
   for (size_t offset = globalTid; offset < count; offset += globalNthreads) {
     T v = T{0};
     for (int peer=0; peer<nRanks; peer++) {
-      T* sendPtr = (T*)ncclGetLsaPointer(sendwin, sendoffset, peer);
+      T* sendPtr = (T*)pcclGetLsaPointer(sendwin, sendoffset, peer);
       v += sendPtr[offset];
     }
     for (int peer=0; peer<nRanks; peer++) {
-      T* recvPtr = (T*)ncclGetLsaPointer(recvwin, recvoffset, peer);
+      T* recvPtr = (T*)pcclGetLsaPointer(recvwin, recvoffset, peer);
       recvPtr[offset] = v;
     }
   }
-  bar.sync(ncclCoopCta(), hggc::memory_order_release);
+  bar.sync(pcclCoopCta(), hggc::memory_order_release);
 }
 
 template <typename T>
-__global__ void allReduceLsaVectorizedKernel(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
-  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
-  bar.sync(ncclCoopCta(), hggc::memory_order_acquire);
+__global__ void allReduceLsaVectorizedKernel(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct pcclDevComm devComm) {
+  pcclLsaBarrierSession<pcclCoopCta> bar { pcclCoopCta(), devComm, pcclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
+  bar.sync(pcclCoopCta(), hggc::memory_order_acquire);
 
   using TN = typename VectorTypeMapping<T>::Type;
   constexpr int VECTOR_FACTOR = sizeof(TN)/sizeof(T);
@@ -139,11 +139,11 @@ __global__ void allReduceLsaVectorizedKernel(pcclWindow_t sendwin, size_t sendof
     for (size_t offset = globalTid; offset < alignment_offset; offset += globalNthreads) {
       T v_scalar = T{0};
       for (int peer=0; peer<nRanks; peer++) {
-        T* remotePtr = (T*)ncclGetLsaPointer(sendwin, sendoffset, peer);
+        T* remotePtr = (T*)pcclGetLsaPointer(sendwin, sendoffset, peer);
         v_scalar += remotePtr[offset];
       }
       for (int peer=0; peer<nRanks; peer++) {
-        T* remotePtr = (T*)ncclGetLsaPointer(recvwin, recvoffset, peer);
+        T* remotePtr = (T*)pcclGetLsaPointer(recvwin, recvoffset, peer);
         remotePtr[offset] = v_scalar;
       }
     }
@@ -157,7 +157,7 @@ __global__ void allReduceLsaVectorizedKernel(pcclWindow_t sendwin, size_t sendof
       for (int i=0; i < UNROLL_FACTOR; i++) {
         const int stride_offset = i * WARP_SIZE;
         const size_t offset = warp_lane_offset + block_offset + stride_offset;
-        TN* remotePtr = (TN*)ncclGetLsaPointer(sendwin, sendoffset + alignment_offset * sizeof(T), peer);
+        TN* remotePtr = (TN*)pcclGetLsaPointer(sendwin, sendoffset + alignment_offset * sizeof(T), peer);
         v[i] = vectorAdd(v[i], remotePtr[offset]);
       }
     }
@@ -166,7 +166,7 @@ __global__ void allReduceLsaVectorizedKernel(pcclWindow_t sendwin, size_t sendof
       for (int i=0; i < UNROLL_FACTOR; i++) {
         const int stride_offset = i * WARP_SIZE;
         const size_t offset = warp_lane_offset + block_offset + stride_offset;
-        TN* remotePtr = (TN*)ncclGetLsaPointer(recvwin, recvoffset + alignment_offset * sizeof(T), peer);
+        TN* remotePtr = (TN*)pcclGetLsaPointer(recvwin, recvoffset + alignment_offset * sizeof(T), peer);
         remotePtr[offset] = v[i];
       }
     }
@@ -181,7 +181,7 @@ __global__ void allReduceLsaVectorizedKernel(pcclWindow_t sendwin, size_t sendof
         const int stride_offset = i * WARP_SIZE;
         const size_t offset = warp_lane_offset + block_offset + stride_offset;
         if (offset < vector_count) {
-          TN* remotePtr = (TN*)ncclGetLsaPointer(sendwin, sendoffset + alignment_offset * sizeof(T), peer);
+          TN* remotePtr = (TN*)pcclGetLsaPointer(sendwin, sendoffset + alignment_offset * sizeof(T), peer);
           v[i] = vectorAdd(v[i], remotePtr[offset]);
         }
       }
@@ -192,7 +192,7 @@ __global__ void allReduceLsaVectorizedKernel(pcclWindow_t sendwin, size_t sendof
         const int stride_offset = i * WARP_SIZE;
         const size_t offset = warp_lane_offset + block_offset + stride_offset;
         if (offset < vector_count) {
-          TN* remotePtr = (TN*)ncclGetLsaPointer(recvwin, recvoffset + alignment_offset * sizeof(T), peer);
+          TN* remotePtr = (TN*)pcclGetLsaPointer(recvwin, recvoffset + alignment_offset * sizeof(T), peer);
           remotePtr[offset] = v[i];
         }
       }
@@ -205,21 +205,21 @@ __global__ void allReduceLsaVectorizedKernel(pcclWindow_t sendwin, size_t sendof
       T v_scalar = T{0};
       const size_t actual_offset = remainder_start + offset;
       for (int peer=0; peer<nRanks; peer++) {
-        T* remotePtr = (T*)ncclGetLsaPointer(sendwin, sendoffset, peer);
+        T* remotePtr = (T*)pcclGetLsaPointer(sendwin, sendoffset, peer);
         v_scalar += remotePtr[actual_offset];
       }
       for (int peer=0; peer<nRanks; peer++) {
-        T* remotePtr = (T*)ncclGetLsaPointer(recvwin, recvoffset, peer);
+        T* remotePtr = (T*)pcclGetLsaPointer(recvwin, recvoffset, peer);
         remotePtr[actual_offset] = v_scalar;
       }
     }
   }
 
-  bar.sync(ncclCoopCta(), hggc::memory_order_release);
+  bar.sync(pcclCoopCta(), hggc::memory_order_release);
 }
 
 testResult_t AllReduceRunCollDevice(void* sendwin, size_t sendoffset, void* recvwin, size_t recvoffset,
-    size_t count, pcclDataType_t type, pcclRedOp_t op, int root, ncclDevComm* devComm, hggcStream_t stream, int deviceImpl) {
+    size_t count, pcclDataType_t type, pcclRedOp_t op, int root, pcclDevComm* devComm, hggcStream_t stream, int deviceImpl) {
   switch(deviceImpl) {
     case 1:
       TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL_REDUCE(allReduceLsaKernel, type, op),

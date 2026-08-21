@@ -56,18 +56,18 @@ void AlltoAllGetBw(size_t count, int typesize, double sec, double* algBw, double
 }
 
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
-testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs, pcclComm_t comm) {
+testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, pcclDevCommRequirements* reqs, pcclComm_t comm) {
   if (!reqs || !comm) return testInternalError;
 
-  ncclCommProperties_t commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
-  if (ncclCommQueryProperties(comm, &commProperties) != pcclSuccess) {
+  pcclCommProperties_t commProperties = PCCL_COMM_PROPERTIES_INITIALIZER;
+  if (pcclCommQueryProperties(comm, &commProperties) != pcclSuccess) {
     return testPcclError;
   }
 
   switch(deviceImpl) {
     case 1:
     case 2:
-      if (commProperties.nRanks != ncclTeamLsa(comm).nRanks) {
+      if (commProperties.nRanks != pcclTeamLsa(comm).nRanks) {
         fprintf(stderr, "DeviceImplementation 1 and 2 requires P2P "
                         "connectivity across all ranks. Not all ranks of this "
                         "communicator have P2P connectivity.\n");
@@ -77,14 +77,14 @@ testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequireme
       return testSuccess;
     case 3:
     case 4:
-      if (commProperties.ginType == NCCL_GIN_TYPE_NONE) {
+      if (commProperties.ginType == PCCL_GIN_TYPE_NONE) {
         fprintf(stderr, "This test requires GIN support, but GIN support is not "
                         "enabled for this communicator.\n");
         return testInvalidUsage;
       }
       reqs->barrierCount = deviceCtaCount;
       reqs->ginSignalCount = deviceCtaCount;
-      reqs->ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+      reqs->ginConnectionType = PCCL_GIN_CONNECTION_FULL;
       return testSuccess;
     default:
       fprintf(stderr, "ERROR: alltoall device implementation %d is not supported.\n", deviceImpl);
@@ -94,21 +94,21 @@ testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequireme
 
 template <typename T>
 __device__ void AlltoAllScalarImpl(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int rank, int nRanks, int tid, int nthreads) {
-  T* sendPtr = (T*)ncclGetLsaPointer(sendwin, sendoffset, rank);
+  T* sendPtr = (T*)pcclGetLsaPointer(sendwin, sendoffset, rank);
 
   for (size_t offset = tid; offset < count; offset += nthreads) {
     for (int peer = 0; peer < nRanks; peer++) {
       T value = sendPtr[peer * count + offset];
-      T* recvPtr = (T*)ncclGetLsaPointer(recvwin, recvoffset, peer);
+      T* recvPtr = (T*)pcclGetLsaPointer(recvwin, recvoffset, peer);
       recvPtr[rank * count + offset] = value;
     }
   }
 }
 
 template <typename T>
-__global__ void NvlAlltoAllKernel(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
-  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
-  bar.sync(ncclCoopCta(), hggc::memory_order_acquire);
+__global__ void IcnAlltoAllKernel(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct pcclDevComm devComm) {
+  pcclLsaBarrierSession<pcclCoopCta> bar { pcclCoopCta(), devComm, pcclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
+  bar.sync(pcclCoopCta(), hggc::memory_order_acquire);
 
   int rank = devComm.rank, nRanks = devComm.nRanks;
   int tid = threadIdx.x + blockDim.x * blockIdx.x;
@@ -116,13 +116,13 @@ __global__ void NvlAlltoAllKernel(pcclWindow_t sendwin, size_t sendoffset, pcclW
 
   AlltoAllScalarImpl<T>(sendwin, sendoffset, recvwin, recvoffset, count, rank, nRanks, tid, nthreads);
 
-  bar.sync(ncclCoopCta(), hggc::memory_order_release);
+  bar.sync(pcclCoopCta(), hggc::memory_order_release);
 }
 
 template <typename T>
-__global__ void NvlAlltoAllKernelOptimized(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
-  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
-  bar.sync(ncclCoopCta(), hggc::memory_order_acquire);
+__global__ void IcnAlltoAllKernelOptimized(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct pcclDevComm devComm) {
+  pcclLsaBarrierSession<pcclCoopCta> bar { pcclCoopCta(), devComm, pcclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
+  bar.sync(pcclCoopCta(), hggc::memory_order_acquire);
 
   using TN = typename VectorTypeMapping<T>::Type;
   constexpr int VECTOR_FACTOR = sizeof(TN) / sizeof(T);
@@ -133,7 +133,7 @@ __global__ void NvlAlltoAllKernelOptimized(pcclWindow_t sendwin, size_t sendoffs
   int tid = threadIdx.x + blockDim.x * blockIdx.x;
   int nthreads = blockDim.x * gridDim.x;
 
-  T* sendPtr = (T*)ncclGetLsaPointer(sendwin, sendoffset, rank);
+  T* sendPtr = (T*)pcclGetLsaPointer(sendwin, sendoffset, rank);
 
   bool canVectorize = (sizeof(TN) > sizeof(T)) &&
                       (reinterpret_cast<uintptr_t>(sendPtr) % sizeof(TN) == 0) &&
@@ -152,7 +152,7 @@ __global__ void NvlAlltoAllKernelOptimized(pcclWindow_t sendwin, size_t sendoffs
         for (int p = 0; p < peersInGroup; p++) {
           int peer = peerBase + p;
           TN* sendVecPtr = (TN*)(sendPtr + peer * count);
-          TN* recvVecPtr = (TN*)((T*)ncclGetLsaPointer(recvwin, recvoffset, peer) + rank * count);
+          TN* recvVecPtr = (TN*)((T*)pcclGetLsaPointer(recvwin, recvoffset, peer) + rank * count);
           TN values[UNROLL_FACTOR];
 
           #pragma unroll
@@ -172,7 +172,7 @@ __global__ void NvlAlltoAllKernelOptimized(pcclWindow_t sendwin, size_t sendoffs
     for (size_t base_offset = aligned_vector_count + tid; base_offset < vector_count; base_offset += nthreads) {
       for (int peer = 0; peer < nRanks; peer++) {
         TN* sendVecPtr = (TN*)(sendPtr + peer * count);
-        TN* recvVecPtr = (TN*)((T*)ncclGetLsaPointer(recvwin, recvoffset, peer) + rank * count);
+        TN* recvVecPtr = (TN*)((T*)pcclGetLsaPointer(recvwin, recvoffset, peer) + rank * count);
         recvVecPtr[base_offset] = sendVecPtr[base_offset];
       }
     }
@@ -181,7 +181,7 @@ __global__ void NvlAlltoAllKernelOptimized(pcclWindow_t sendwin, size_t sendoffs
     for (size_t offset = scalar_start + tid; offset < count; offset += nthreads) {
       for (int peer = 0; peer < nRanks; peer++) {
         T value = sendPtr[peer * count + offset];
-        T* recvPtr = (T*)ncclGetLsaPointer(recvwin, recvoffset, peer);
+        T* recvPtr = (T*)pcclGetLsaPointer(recvwin, recvoffset, peer);
         recvPtr[rank * count + offset] = value;
       }
     }
@@ -189,53 +189,53 @@ __global__ void NvlAlltoAllKernelOptimized(pcclWindow_t sendwin, size_t sendoffs
     AlltoAllScalarImpl<T>(sendwin, sendoffset, recvwin, recvoffset, count, rank, nRanks, tid, nthreads);
   }
 
-  bar.sync(ncclCoopCta(), hggc::memory_order_release);
+  bar.sync(pcclCoopCta(), hggc::memory_order_release);
 }
 
 template <typename T>
-__global__ void GinAlltoAllKernel(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+__global__ void GinAlltoAllKernel(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct pcclDevComm devComm) {
   int ginContext = 0;
   unsigned int signalIndex = blockIdx.x;
-  ncclGin gin { devComm, ginContext };
+  pcclGin gin { devComm, ginContext };
   uint64_t signalValue = gin.readSignal(signalIndex);
 
-  ncclBarrierSession<ncclCoopCta> bar { ncclCoopCta(), ncclTeamTagWorld(), gin, blockIdx.x };
-  bar.sync(ncclCoopCta(), hggc::memory_order_acquire, ncclGinFenceLevel::Relaxed);
+  pcclBarrierSession<pcclCoopCta> bar { pcclCoopCta(), pcclTeamTagWorld(), gin, blockIdx.x };
+  bar.sync(pcclCoopCta(), hggc::memory_order_acquire, pcclGinFenceLevel::Relaxed);
 
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   int nthreads = blockDim.x * gridDim.x;
 
   const size_t size = count * sizeof(T);
   for (int r=tid; r<devComm.nRanks; r+=nthreads) {
-    gin.put(ncclTeamWorld(devComm), r,
+    gin.put(pcclTeamWorld(devComm), r,
         recvwin, recvoffset + devComm.rank * size,
         sendwin, sendoffset + r * size,
-        size, ncclGin_SignalInc{signalIndex});
+        size, pcclGin_SignalInc{signalIndex});
   }
 
   int receivingCta = (devComm.rank % nthreads) / blockDim.x;
   if (blockIdx.x == receivingCta)
-    gin.waitSignal(ncclCoopCta(), signalIndex, signalValue + devComm.nRanks);
-  gin.flush(ncclCoopCta());
+    gin.waitSignal(pcclCoopCta(), signalIndex, signalValue + devComm.nRanks);
+  gin.flush(pcclCoopCta());
 
-  bar.sync(ncclCoopCta(), hggc::memory_order_release, ncclGinFenceLevel::Relaxed);
+  bar.sync(pcclCoopCta(), hggc::memory_order_release, pcclGinFenceLevel::Relaxed);
 }
 
 template <typename T>
-__global__ void HybridAlltoAllKernel(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+__global__ void HybridAlltoAllKernel(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct pcclDevComm devComm) {
   int ginContext = 0;
   unsigned int signalIndex = blockIdx.x;
-  ncclGin gin { devComm, ginContext };
+  pcclGin gin { devComm, ginContext };
   uint64_t signalValue = gin.readSignal(signalIndex);
 
-  ncclBarrierSession<ncclCoopCta> bar { ncclCoopCta(), ncclTeamTagWorld(), gin, blockIdx.x };
-  bar.sync(ncclCoopCta(), hggc::memory_order_acquire, ncclGinFenceLevel::Relaxed);
+  pcclBarrierSession<pcclCoopCta> bar { pcclCoopCta(), pcclTeamTagWorld(), gin, blockIdx.x };
+  bar.sync(pcclCoopCta(), hggc::memory_order_acquire, pcclGinFenceLevel::Relaxed);
 
   int tid = threadIdx.x + blockIdx.x*blockDim.x;
   int nthreads = blockDim.x * gridDim.x;
 
-  ncclTeam world = ncclTeamWorld(devComm);
-  ncclTeam lsa = ncclTeamLsa(devComm);
+  pcclTeam world = pcclTeamWorld(devComm);
+  pcclTeam lsa = pcclTeamLsa(devComm);
   const int startLsa = world.rank - lsa.rank;
   const int lsaSize  = lsa.nRanks;
 
@@ -245,15 +245,15 @@ __global__ void HybridAlltoAllKernel(pcclWindow_t sendwin, size_t sendoffset, pc
       gin.put(world, r,
           recvwin, recvoffset + world.rank * size,
           sendwin, sendoffset + r * size,
-          size, ncclGin_SignalInc{signalIndex});
+          size, pcclGin_SignalInc{signalIndex});
     }
   }
 
-  T* sendLocal = (T*)ncclGetLocalPointer(sendwin, sendoffset);
+  T* sendLocal = (T*)pcclGetLocalPointer(sendwin, sendoffset);
   for (size_t offset = tid; offset < count; offset += nthreads) {
     for (int lp = 0; lp < lsa.nRanks; lp++) {
       int wr = startLsa + lp;
-      T* recvPtr = (T*)ncclGetLsaPointer(recvwin, recvoffset, lp);
+      T* recvPtr = (T*)pcclGetLsaPointer(recvwin, recvoffset, lp);
       recvPtr[world.rank * count + offset] = sendLocal[wr * count + offset];
     }
   }
@@ -261,21 +261,21 @@ __global__ void HybridAlltoAllKernel(pcclWindow_t sendwin, size_t sendoffset, pc
   int numRemotePeers = world.nRanks - lsa.nRanks;
   int receivingCta = (world.rank % nthreads) / blockDim.x;
   if (blockIdx.x == receivingCta)
-    gin.waitSignal(ncclCoopCta(), signalIndex, signalValue + numRemotePeers);
-  gin.flush(ncclCoopCta());
+    gin.waitSignal(pcclCoopCta(), signalIndex, signalValue + numRemotePeers);
+  gin.flush(pcclCoopCta());
 
-  bar.sync(ncclCoopCta(), hggc::memory_order_release, ncclGinFenceLevel::Relaxed);
+  bar.sync(pcclCoopCta(), hggc::memory_order_release, pcclGinFenceLevel::Relaxed);
 }
 
 testResult_t AlltoAllRunCollDevice(void* sendwin, size_t sendoffset, void* recvwin, size_t recvoffset,
-    size_t count, pcclDataType_t type, pcclRedOp_t op, int root, ncclDevComm* devComm, hggcStream_t stream, int deviceImpl) {
+    size_t count, pcclDataType_t type, pcclRedOp_t op, int root, pcclDevComm* devComm, hggcStream_t stream, int deviceImpl) {
   switch(deviceImpl) {
     case 1:
-      TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernel, type, op),
+      TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(IcnAlltoAllKernel, type, op),
                  sendwin, sendoffset, recvwin, recvoffset, count, type, op, root, devComm, stream));
       return testSuccess;
     case 2:
-      TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernelOptimized, type, op),
+      TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(IcnAlltoAllKernelOptimized, type, op),
                  sendwin, sendoffset, recvwin, recvoffset, count, type, op, root, devComm, stream));
       return testSuccess;
     case 3:

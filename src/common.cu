@@ -27,9 +27,9 @@
 #pragma weak pcclCommWindowRegister
 #pragma weak pcclCommWindowDeregister
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
-#pragma weak ncclDevCommCreate
-#pragma weak ncclDevCommDestroy
-#pragma weak ncclCommQueryProperties
+#pragma weak pcclDevCommCreate
+#pragma weak pcclDevCommDestroy
+#pragma weak pcclCommQueryProperties
 #endif
 
 #ifndef MPI_SUPPORT
@@ -1183,11 +1183,11 @@ testResult_t threadInit(struct threadArgs* args) {
 
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
   if (deviceImpl > 0) {
-    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    pcclDevCommRequirements reqs = PCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     TESTCHECK(pcclTestEngine.getDevCommRequirements(deviceImpl, &reqs, args->comms[0]));
     PCCLCHECK(pcclGroupStart());
     for (int i = 0; i < args->nGpus; i++) {
-      PCCLCHECK((pcclResult_t)ncclDevCommCreate(args->comms[i], &reqs, args->devComms+i));
+      PCCLCHECK((pcclResult_t)pcclDevCommCreate(args->comms[i], &reqs, args->devComms+i));
     }
     PCCLCHECK(pcclGroupEnd());
   }
@@ -1198,7 +1198,7 @@ testResult_t threadInit(struct threadArgs* args) {
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
   if (deviceImpl > 0) {
     for (int i = 0; i < args->nGpus; i++) {
-      PCCLCHECK((pcclResult_t)ncclDevCommDestroy(args->comms[i], args->devComms+i));
+      PCCLCHECK((pcclResult_t)pcclDevCommDestroy(args->comms[i], args->devComms+i));
     }
   }
 #endif
@@ -1715,7 +1715,7 @@ testResult_t run() {
   //if parallel init is not selected, use main thread to initialize PCCL
   pcclComm_t* comms = (pcclComm_t*)malloc(sizeof(pcclComm_t)*nThreads*nGpus);
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
-  ncclDevComm* devComms = (ncclDevComm*)calloc(nThreads*nGpus, sizeof(ncclDevComm));
+  pcclDevComm* devComms = (pcclDevComm*)calloc(nThreads*nGpus, sizeof(pcclDevComm));
 #endif
   void **sendRegHandles = NULL;
   void **recvRegHandles = NULL;
@@ -1760,11 +1760,11 @@ testResult_t run() {
 
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
     if (deviceImpl > 0) {
-      ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+      pcclDevCommRequirements reqs = PCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
       TESTCHECK(pcclTestEngine.getDevCommRequirements(deviceImpl, &reqs, comms[0]));
       PCCLCHECK(pcclGroupStart());
       for (int i = 0; i < nGpus * nThreads; i++) {
-        PCCLCHECK((pcclResult_t)ncclDevCommCreate(comms[i], &reqs, devComms+i));
+        PCCLCHECK((pcclResult_t)pcclDevCommCreate(comms[i], &reqs, devComms+i));
       }
       PCCLCHECK(pcclGroupEnd());
     }
@@ -1848,7 +1848,7 @@ testResult_t run() {
     for(int i=0; i<nGpus*nThreads; ++i) {
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
       if (deviceImpl > 0) {
-        PCCLCHECK((pcclResult_t)ncclDevCommDestroy(comms[i], devComms+i));
+        PCCLCHECK((pcclResult_t)pcclDevCommDestroy(comms[i], devComms+i));
       }
 #endif
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,0,0)

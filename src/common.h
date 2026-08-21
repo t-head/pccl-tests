@@ -10,7 +10,7 @@
 
 #include "pccl.h"
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
-#include "nccl_device.h"
+#include "pccl_device.h"
 #endif
 #include <stdio.h>
 #include <algorithm>
@@ -113,9 +113,9 @@ struct testEngine {
   testResult_t (*runTest)(struct threadArgs* args, int root, pcclDataType_t type,
       const char* typeName, pcclRedOp_t op, const char* opName);
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
-  testResult_t (*getDevCommRequirements)(int deviceImpl, ncclDevCommRequirements* reqs, pcclComm_t comm);
+  testResult_t (*getDevCommRequirements)(int deviceImpl, pcclDevCommRequirements* reqs, pcclComm_t comm);
   testResult_t (*runCollDevice)(void* sendwin, size_t sendoffset, void* recvwin, size_t recvoffset,
-      size_t count, pcclDataType_t type, pcclRedOp_t op, int root, ncclDevComm* devComm, hggcStream_t stream, int deviceImpl);
+      size_t count, pcclDataType_t type, pcclRedOp_t op, int root, pcclDevComm* devComm, hggcStream_t stream, int deviceImpl);
 #endif
 };
 
@@ -145,7 +145,7 @@ struct threadArgs {
   pcclUniqueId* pcclIds;
   pcclComm_t* comms;
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
-  ncclDevComm* devComms;
+  pcclDevComm* devComms;
 #endif
   hggcStream_t* streams;
   hggcEvent_t* startEvents;
@@ -333,7 +333,7 @@ extern int deviceCtaCount;
 
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
 template <typename F>
-testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, pcclDataType_t type, pcclRedOp_t op, int root, ncclDevComm* devComm, hggcStream_t stream) {
+testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, pcclDataType_t type, pcclRedOp_t op, int root, pcclDevComm* devComm, hggcStream_t stream) {
   if (kernel == nullptr) return testNotImplemented;
   pcclWindow_t sendwin = (pcclWindow_t)sendbuff;
   pcclWindow_t recvwin = (pcclWindow_t)recvbuff;
