@@ -10,22 +10,26 @@
 PPU_ARCHS ?= ppu_10,ppu_15
 VERBOSE ?= 0
 DEBUG ?= 0
-
 PPU_SDK ?= /usr/local/PPU_SDK
 HGCC ?= $(PPU_SDK)/bin/hgcc
 PPU_LIB ?= $(PPU_SDK)/lib
 PPU_INC ?= $(PPU_SDK)/include
-
+PCCL_TESTS_ROOT := $(abspath ..)
 HGGC_VERSION = $(strip $(shell which $(HGCC) >/dev/null && $(HGCC) --version | grep "version" | sed 's/.*version //' | sed 's/ .*//'))
 HGGC_MAJOR = $(shell echo $(HGGC_VERSION) | cut -d "." -f 1)
-HGGC_MINOR = $(shell echo $(CUDA_VERSION) | cut -d "." -f 2)
-
-CXXFLAGS   := -DHGGC_MAJOR=$(HGGC_MAJOR) -DHGGC_MINOR=$(HGGC_MINOR) -fPIC \
-              -Wall -Wno-unused-function -Wno-sign-compare -Wno-deprecated-declarations  \
-              -std=c++17 -Wvla \
-              $(CXXFLAGS)
+HGGC_MINOR = $(shell echo $(HGGC_VERSION) | cut -d "." -f 2)
 
 HGFLAGS    := -std=c++17 -x hg -Xcompiler -fPIC -DOMPI_SKIP_MPICXX
+
+ifeq ($(REL_NO_SYM), 1)
+  ifneq ($(PCCL_TESTS_ROOT),)
+    PREFIX_MAP_FLAGS := $(shell \
+      $(HGCC) -Xcompiler -ffile-prefix-map=/tmp=. -x c /dev/null -c -o /dev/null 2>/dev/null \
+      && echo "-ffile-prefix-map=$(PCCL_TESTS_ROOT)=." \
+      || echo "-fdebug-prefix-map=$(PCCL_TESTS_ROOT)=. -fmacro-prefix-map=$(PCCL_TESTS_ROOT)=.")
+    HGFLAGS += $(PREFIX_MAP_FLAGS:%=-Xcompiler %)
+  endif
+endif
 
 ifneq ($(PCCL_HOME),)
   HGFLAGS += -I$(PCCL_HOME)/include/
@@ -53,11 +57,9 @@ SPLIT_ARCHS = $(shell echo $(PPU_ARCHS) | tr ',' ' ')
 TMP := $(foreach arch,$(SPLIT_ARCHS), $(call append_arch,$(arch)))
 
 ifeq ($(DEBUG), 0)
-  HGFLAGS   += -dopt 3
-  CXXFLAGS  += -O3 -g
+  HGFLAGS += -O3 -dopt 3
 else
-  HGFLAGS   += -dopt 0 -G -g -lineinfo
-  CXXFLAGS  += -O0 -g
+  HGFLAGS += -O0 -dopt 0 -G -g -lineinfo
 endif
 
 ifneq ($(VERBOSE), 0)
@@ -127,3 +129,6 @@ ${DST_DIR}/%_perf:${DST_DIR}/%.o ${COMMON_OBJ_FILES}  $(TEST_VERIFIABLE_OBJS)
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(HGCC) -o $@ $^ ${HGLDFLAGS}
+ifeq ($(REL_NO_SYM), 1)
+	strip --strip-all $@
+endif

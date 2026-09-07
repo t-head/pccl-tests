@@ -12,7 +12,7 @@ hggcrt_version=12
 use_mpi=0
 rebuild=0
 dry_run=0
-debug=0
+build_type="rel_sym"
 keep=0
 verbose=0
 ppu_option=""
@@ -26,10 +26,10 @@ Usage: ./$(basename "$0") [OPTIONS]
 
 Options:
     --ppu_archs <string>      Specify the PPU Archs, any combination of (ppu_10|ppu_15). (default: ppu_10,ppu_15)
+    --build_type <string>     Symbol control. rel_sym: release with some symbols. dbg: debug version. rel_no_sym: release and strip symbol. (default: rel_sym)
     --use_mpi                 Specify to build multi-process pccl-tests. (boolean flag)
     --rebuild                 Specify to make clean and remove build directory before building pccl-tests. (boolean flag)
     --dry_run                 Specify to show what commands would be executed without actually running them. (boolean flag)
-    --debug                   Specify to build pccl-tests with debug flag. (boolean flag)
     --keep                    Specify to retain all intermediate files generated during compilation.
     --verbose                 Specify to show intermediate build log. (boolean flag)
     --ppu_option              Specify compiler optimize and bug fix options. (default: "")
@@ -59,8 +59,10 @@ function build_test
     if [ $keep -eq 1 ]; then
         build_cmd_str="${build_cmd_str} KEEP=1"
     fi
-    if [ $debug -eq 1 ]; then
+    if [[ $build_type == "dbg" ]]; then
         build_cmd_str="${build_cmd_str} DEBUG=1"
+    elif [[ $build_type == "rel_no_sym" ]]; then
+        build_cmd_str="${build_cmd_str} REL_NO_SYM=1"
     fi
     if [ $verbose -eq 1 ]; then
         build_cmd_str="${build_cmd_str} VERBOSE=1"
@@ -80,8 +82,9 @@ while [[ $# -ge 1 ]]
 do
     key="$1"
     case $key in
-        --debug)
-            debug=1
+        --build_type)
+            build_type="$2"
+            shift
             ;;
         --keep)
             keep=1
