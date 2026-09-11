@@ -60,7 +60,7 @@ jobs:
         run: |
           echo "---------------------"
           export source_home=$AONE_CI_SOURCE
-          export build_output=$AONE_CI_SOURCE/output
+          export build_output=$AONE_CI_SOURCE/output_hggcrt13
           mkdir -p $build_output
           echo $PWD
           echo $AONE_CI_SOURCE
@@ -85,9 +85,9 @@ jobs:
         run: |
           ls
           echo "---------------------"
-          tar -zcvf output_hggcrt13.tar.gz $AONE_CI_SOURCE/output/*
+          tar -zcvf output_hggcrt13.tar.gz $AONE_CI_SOURCE/output_hggcrt13/*
           echo "---------------------"
-          ls $AONE_CI_SOURCE/output/*
+          ls $AONE_CI_SOURCE/output_hggcrt13/*
       - uses: upload-oss
         inputs:
           path: output_hggcrt13.tar.gz
@@ -110,7 +110,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_composite_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_composite_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt13; ls; find -name "run_composite_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_composite_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt13_build.outputs.oss_url}}
           timeout: 10800
@@ -129,7 +129,7 @@ jobs:
         inputs:
           ppu: 4
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_commshrink_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_commshrink_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt13; ls; find -name "run_commshrink_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_commshrink_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt13_build.outputs.oss_url}}
           timeout: 10800
@@ -148,7 +148,7 @@ jobs:
         inputs:
           ppu: 4
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_cuda_graph_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_cuda_graph_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt13; ls; find -name "run_cuda_graph_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_cuda_graph_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt13_build.outputs.oss_url}}
           timeout: 10800
@@ -167,7 +167,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_copyengine_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_copyengine_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt13; ls; find -name "run_copyengine_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_copyengine_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt13_build.outputs.oss_url}}
           timeout: 10800
@@ -186,7 +186,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_register_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_register_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt13; ls; find -name "run_register_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_register_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt13_build.outputs.oss_url}}
           timeout: 10800
@@ -205,7 +205,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_customAllreduce_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_customAllreduce_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt13; ls; find -name "run_customAllreduce_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_customAllreduce_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt13_build.outputs.oss_url}}
           timeout: 10800
@@ -224,7 +224,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_memcpy_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_memcpy_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt13; ls; find -name "run_memcpy_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_memcpy_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt13_build.outputs.oss_url}}
           timeout: 10800
@@ -243,7 +243,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_nonblocking_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_nonblocking_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt13; ls; find -name "run_nonblocking_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_nonblocking_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt13_build.outputs.oss_url}}
           timeout: 10800
@@ -262,7 +262,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_commabort_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_commabort_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt13; ls; find -name "run_commabort_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_commabort_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt13_build.outputs.oss_url}}
           timeout: 10800
@@ -305,7 +305,7 @@ jobs:
         run: |
           echo "---------------------"
           export source_home=$AONE_CI_SOURCE
-          export build_output=$AONE_CI_SOURCE/output
+          export build_output=$AONE_CI_SOURCE/output_hggcrt12
           mkdir -p $build_output
           echo $PWD
           echo $AONE_CI_SOURCE
@@ -330,9 +330,9 @@ jobs:
         run: |
           ls
           echo "---------------------"
-          tar -zcvf output_hggcrt12.tar.gz $AONE_CI_SOURCE/output/*
+          tar -zcvf output_hggcrt12.tar.gz $AONE_CI_SOURCE/output_hggcrt12/*
           echo "---------------------"
-          ls $AONE_CI_SOURCE/output/*
+          ls $AONE_CI_SOURCE/output_hggcrt12/*
       - uses: upload-oss
         inputs:
           path: output_hggcrt12.tar.gz
@@ -355,7 +355,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_composite_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_composite_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt12; ls; find -name "run_composite_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_composite_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt12_build.outputs.oss_url}}
           timeout: 10800
@@ -374,7 +374,7 @@ jobs:
         inputs:
           ppu: 4
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_commshrink_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_commshrink_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt12; ls; find -name "run_commshrink_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_commshrink_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt12_build.outputs.oss_url}}
           timeout: 10800
@@ -393,7 +393,7 @@ jobs:
         inputs:
           ppu: 4
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_cuda_graph_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_cuda_graph_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt12; ls; find -name "run_cuda_graph_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_cuda_graph_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt12_build.outputs.oss_url}}
           timeout: 10800
@@ -412,7 +412,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_copyengine_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_copyengine_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt12; ls; find -name "run_copyengine_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_copyengine_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt12_build.outputs.oss_url}}
           timeout: 10800
@@ -431,7 +431,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_register_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_register_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt12; ls; find -name "run_register_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_register_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt12_build.outputs.oss_url}}
           timeout: 10800
@@ -450,7 +450,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_customAllreduce_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_customAllreduce_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt12; ls; find -name "run_customAllreduce_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_customAllreduce_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt12_build.outputs.oss_url}}
           timeout: 10800
@@ -469,7 +469,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_memcpy_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_memcpy_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt12; ls; find -name "run_memcpy_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_memcpy_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt12_build.outputs.oss_url}}
           timeout: 10800
@@ -488,7 +488,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_nonblocking_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_nonblocking_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt12; ls; find -name "run_nonblocking_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_nonblocking_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt12_build.outputs.oss_url}}
           timeout: 10800
@@ -507,7 +507,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_commabort_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_commabort_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt12; ls; find -name "run_commabort_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_commabort_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt12_build.outputs.oss_url}}
           timeout: 10800
@@ -550,7 +550,7 @@ jobs:
         run: |
           echo "---------------------"
           export source_home=$AONE_CI_SOURCE
-          export build_output=$AONE_CI_SOURCE/output
+          export build_output=$AONE_CI_SOURCE/output_hggcrt13_tsm
           mkdir -p $build_output
           echo $PWD
           echo $AONE_CI_SOURCE
@@ -567,9 +567,9 @@ jobs:
         run: |
           ls
           echo "---------------------"
-          tar -zcvf output_hggcrt13_tsm.tar.gz $AONE_CI_SOURCE/output/*
+          tar -zcvf output_hggcrt13_tsm.tar.gz $AONE_CI_SOURCE/output_hggcrt13_tsm/*
           echo "---------------------"
-          ls $AONE_CI_SOURCE/output/*
+          ls $AONE_CI_SOURCE/output_hggcrt13_tsm/*
       - uses: upload-oss
         inputs:
           path: output_hggcrt13_tsm.tar.gz
@@ -581,7 +581,7 @@ jobs:
         inputs:
           ppu: 4
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_common_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_common_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt13_tsm; ls; find -name "run_common_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_common_test.sh
           labels: OAM-810E
           image_url: ${{steps.artifact.outputs.oss_url}}
           timeout: 10800
@@ -624,7 +624,7 @@ jobs:
         run: |
           echo "---------------------"
           export source_home=$AONE_CI_SOURCE
-          export build_output=$AONE_CI_SOURCE/output
+          export build_output=$AONE_CI_SOURCE/output_hggcrt13_notsm
           mkdir -p $build_output
           echo $PWD
           echo $AONE_CI_SOURCE
@@ -641,9 +641,9 @@ jobs:
         run: |
           ls
           echo "---------------------"
-          tar -zcvf output_hggcrt13_notsm.tar.gz $AONE_CI_SOURCE/output/*
+          tar -zcvf output_hggcrt13_notsm.tar.gz $AONE_CI_SOURCE/output_hggcrt13_notsm/*
           echo "---------------------"
-          ls $AONE_CI_SOURCE/output/*
+          ls $AONE_CI_SOURCE/output_hggcrt13_notsm/*
       - uses: upload-oss
         inputs:
           path: output_hggcrt13_notsm.tar.gz
@@ -655,7 +655,7 @@ jobs:
         inputs:
           ppu: 4
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_common_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_common_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt13_notsm; ls; find -name "run_common_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_common_test.sh
           labels: OAM-810E
           image_url: ${{steps.artifact.outputs.oss_url}}
           timeout: 10800
@@ -698,7 +698,7 @@ jobs:
         run: |
           echo "---------------------"
           export source_home=$AONE_CI_SOURCE
-          export build_output=$AONE_CI_SOURCE/output
+          export build_output=$AONE_CI_SOURCE/output_hggcrt13_acu
           mkdir -p $build_output
           echo $PWD
           echo $AONE_CI_SOURCE
@@ -715,9 +715,9 @@ jobs:
         run: |
           ls
           echo "---------------------"
-          tar -zcvf output_hggcrt13_acu.tar.gz $AONE_CI_SOURCE/output/*
+          tar -zcvf output_hggcrt13_acu.tar.gz $AONE_CI_SOURCE/output_hggcrt13_acu/*
           echo "---------------------"
-          ls $AONE_CI_SOURCE/output/*
+          ls $AONE_CI_SOURCE/output_hggcrt13_acu/*
       - uses: upload-oss
         inputs:
           path: output_hggcrt13_acu.tar.gz
@@ -729,7 +729,7 @@ jobs:
         inputs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
-          cmd: cd ./aoneci/runner/work/source/output; ls; find -name "run_acu_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_acu_test.sh
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt13_acu; ls; find -name "run_acu_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_acu_test.sh
           labels: OAM-810E
           image_url: ${{steps.artifact.outputs.oss_url}}
           timeout: 10800
@@ -772,7 +772,7 @@ jobs:
         run: |
           echo "---------------------"
           export source_home=$AONE_CI_SOURCE
-          export build_output=$AONE_CI_SOURCE/output
+          export build_output=$AONE_CI_SOURCE/output_hggcrt12_ubuntu20
           mkdir -p $build_output
           echo $PWD
           echo $AONE_CI_SOURCE
@@ -788,12 +788,12 @@ jobs:
         run: |
           ls
           echo "---------------------"
-          tar -zcvf output.tar.gz $AONE_CI_SOURCE/output/*
+          tar -zcvf output_hggcrt12_ubuntu20.tar.gz $AONE_CI_SOURCE/output_hggcrt12_ubuntu20/*
           echo "---------------------"
-          ls $AONE_CI_SOURCE/output/*
+          ls $AONE_CI_SOURCE/output_hggcrt12_ubuntu20/*
       - uses: upload-oss
         inputs:
-          path: output.tar.gz
+          path: output_hggcrt12_ubuntu20.tar.gz
           retention-days: 1
       - id: artifact
         run: |
@@ -837,7 +837,7 @@ jobs:
         run: |
           echo "---------------------"
           export source_home=$AONE_CI_SOURCE
-          export build_output=$AONE_CI_SOURCE/output
+          export build_output=$AONE_CI_SOURCE/output_hggcrt13_alios7
           mkdir -p $build_output
           echo $PWD
           echo $AONE_CI_SOURCE
@@ -853,12 +853,12 @@ jobs:
         run: |
           ls
           echo "---------------------"
-          tar -zcvf output.tar.gz $AONE_CI_SOURCE/output/*
+          tar -zcvf output_hggcrt13_alios7.tar.gz $AONE_CI_SOURCE/output_hggcrt13_alios7/*
           echo "---------------------"
-          ls $AONE_CI_SOURCE/output/*
+          ls $AONE_CI_SOURCE/output_hggcrt13_alios7/*
       - uses: upload-oss
         inputs:
-          path: output.tar.gz
+          path: output_hggcrt13_alios7.tar.gz
           retention-days: 1
       - id: artifact
         run: |
@@ -902,7 +902,7 @@ jobs:
         run: |
           echo "---------------------"
           export source_home=$AONE_CI_SOURCE
-          export build_output=$AONE_CI_SOURCE/output
+          export build_output=$AONE_CI_SOURCE/output_hggcrt12_alios8
           mkdir -p $build_output
           echo $PWD
           echo $AONE_CI_SOURCE
@@ -918,12 +918,12 @@ jobs:
         run: |
           ls
           echo "---------------------"
-          tar -zcvf output.tar.gz $AONE_CI_SOURCE/output/*
+          tar -zcvf output_hggcrt12_alios8.tar.gz $AONE_CI_SOURCE/output_hggcrt12_alios8/*
           echo "---------------------"
-          ls $AONE_CI_SOURCE/output/*
+          ls $AONE_CI_SOURCE/output_hggcrt12_alios8/*
       - uses: upload-oss
         inputs:
-          path: output.tar.gz
+          path: output_hggcrt12_alios8.tar.gz
           retention-days: 1
       - id: artifact
         run: |
@@ -967,7 +967,7 @@ jobs:
         run: |
           echo "---------------------"
           export source_home=$AONE_CI_SOURCE
-          export build_output=$AONE_CI_SOURCE/output
+          export build_output=$AONE_CI_SOURCE/output_hggcrt13_afa4
           mkdir -p $build_output
           echo $PWD
           echo $AONE_CI_SOURCE
@@ -983,12 +983,12 @@ jobs:
         run: |
           ls
           echo "---------------------"
-          tar -zcvf output.tar.gz $AONE_CI_SOURCE/output/*
+          tar -zcvf output_hggcrt13_afa4.tar.gz $AONE_CI_SOURCE/output_hggcrt13_afa4/*
           echo "---------------------"
-          ls $AONE_CI_SOURCE/output/*
+          ls $AONE_CI_SOURCE/output_hggcrt13_afa4/*
       - uses: upload-oss
         inputs:
-          path: output.tar.gz
+          path: output_hggcrt13_afa4.tar.gz
           retention-days: 1
       - id: artifact
         run: |
@@ -1032,7 +1032,7 @@ jobs:
         run: |
           echo "---------------------"
           export source_home=$AONE_CI_SOURCE
-          export build_output=$AONE_CI_SOURCE/output
+          export build_output=$AONE_CI_SOURCE/output_hggcrt13_afa3
           mkdir -p $build_output
           echo $PWD
           echo $AONE_CI_SOURCE
@@ -1048,12 +1048,12 @@ jobs:
         run: |
           ls
           echo "---------------------"
-          tar -zcvf output.tar.gz $AONE_CI_SOURCE/output/*
+          tar -zcvf output_hggcrt13_afa3.tar.gz $AONE_CI_SOURCE/output_hggcrt13_afa3/*
           echo "---------------------"
-          ls $AONE_CI_SOURCE/output/*
+          ls $AONE_CI_SOURCE/output_hggcrt13_afa3/*
       - uses: upload-oss
         inputs:
-          path: output.tar.gz
+          path: output_hggcrt13_afa3.tar.gz
           retention-days: 1
       - id: artifact
         run: |

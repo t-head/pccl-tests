@@ -29,7 +29,7 @@ cp -r ${source_home}/pccl-tests/* ${source_home}/comm-internal-testbox/tests/pcc
 echo "######################### $(date +%Y%m%d%H%M%S) Build pccl ##########################"
 source ${source_home}/PPU_SDK/envsetup.sh
 cd ${source_home}/pccl
-bash build.sh --use_sdk
+bash .aoneci/script/pccl_build.sh
 
 echo "######################### $(date +%Y%m%d%H%M%S) Collect pccl artifacts ##########################"
 mkdir -p ${build_output}/lib
@@ -40,8 +40,7 @@ export PCCL_HOME=${source_home}/pccl/build
 
 echo "######################### $(date +%Y%m%d%H%M%S) Build comm-internal-testbox ##########################"
 cd ${source_home}/comm-internal-testbox
-bash build.sh --common_args "--use_mpi" --exclude sailbandwidth,composite_test
-bash build.sh --include composite_test
+bash .aoneci/script/checkin_build.sh
 
 echo "######################### $(date +%Y%m%d%H%M%S) Collect final output ##########################"
 mv ${source_home}/comm-internal-testbox ${build_output}
