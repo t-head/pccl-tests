@@ -78,6 +78,8 @@ jobs:
           cp /aoneci/runner/work/source/pccl-tests/.aoneci/test/run_memcpy_test.sh ./
           cp /aoneci/runner/work/source/pccl-tests/.aoneci/test/run_nonblocking_test.sh ./
           cp /aoneci/runner/work/source/pccl-tests/.aoneci/test/run_commabort_test.sh ./
+          cp /aoneci/runner/work/source/pccl-tests/.aoneci/test/run_lsa_test.sh ./
+        
           source ubuntu24_hggcrt13_build.sh
           ls ${build_output}
       - id: package
@@ -263,6 +265,25 @@ jobs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
           cmd: cd ./aoneci/runner/work/source/output_hggcrt13; ls; find -name "run_commabort_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_commabort_test.sh
+          labels: OAM-810E
+          image_url: ${{jobs.ubuntu24_hggcrt13_build.outputs.oss_url}}
+          timeout: 10800
+
+  lsa_test_hggcrt13:
+    name: "lsa_test_hggcrt13"
+    image: "reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06"
+    timeout: 12h
+    runs-on:
+      - 32-128Gi
+      - amd64
+    needs:
+      - ubuntu24_hggcrt13_build
+    steps:
+      - uses: ptg-ai-test
+        inputs:
+          ppu: 2
+          run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt13; ls; find -name "run_lsa_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_lsa_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt13_build.outputs.oss_url}}
           timeout: 10800
@@ -508,6 +529,25 @@ jobs:
           ppu: 2
           run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
           cmd: cd ./aoneci/runner/work/source/output_hggcrt12; ls; find -name "run_commabort_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_commabort_test.sh
+          labels: OAM-810E
+          image_url: ${{jobs.ubuntu24_hggcrt12_build.outputs.oss_url}}
+          timeout: 10800
+
+  lsa_test_hggcrt12:
+    name: "lsa_test_hggcrt12"
+    image: "reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06"
+    timeout: 12h
+    runs-on:
+      - 32-128Gi
+      - amd64
+    needs:
+      - ubuntu24_hggcrt12_build
+    steps:
+      - uses: ptg-ai-test
+        inputs:
+          ppu: 2
+          run_image: reg.docker.alibaba-inc.com/ai-tmp/pytorch:ubuntu24.04-py312.06
+          cmd: cd ./aoneci/runner/work/source/output_hggcrt12; ls; find -name "run_lsa_test.sh"; export TEST_ROOT=`pwd`; bash $TEST_ROOT/pccl-tests/.aoneci/test/run_lsa_test.sh
           labels: OAM-810E
           image_url: ${{jobs.ubuntu24_hggcrt12_build.outputs.oss_url}}
           timeout: 10800
