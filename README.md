@@ -141,7 +141,9 @@ with `-h` or `--help` to see the options available in your build.
     require PCCL 2.2 or later and symmetric registration (`-R 2`).
     Support varies by benchmark.
   - `-V, --device_cta_count <N>` Number of CTAs for device-side implementations,
-    from `1` to `128`. Default: `16`.
+    from `1` to `128`; with `PCCLX_HAS_LSA_BULK`, the `-D 2` test kernels allow
+    up to `512` on SM89 and `16` on other architectures. These are benchmark
+    limits, not PCCL primitive limits. Default: `16`.
 
 - Initialization
 
