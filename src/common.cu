@@ -1679,8 +1679,8 @@ testResult_t run() {
     HGGCCHECK(hggcStreamCreateWithFlags(streams+i, hggcStreamNonBlocking));
 
     int archMajor, archMinor;
-    hggcDeviceGetAttribute(&archMajor, hggcDevAttrComputeCapabilityMajor, gpus[i]);
-    hggcDeviceGetAttribute(&archMinor, hggcDevAttrComputeCapabilityMinor, gpus[i]);
+    HGGCCHECK(hggcDeviceGetAttribute(&archMajor, hggcDevAttrComputeCapabilityMajor, gpus[i]));
+    HGGCCHECK(hggcDeviceGetAttribute(&archMinor, hggcDevAttrComputeCapabilityMinor, gpus[i]));
     minHggcArch = std::min(minHggcArch, 10 * archMajor + archMinor);
   }
 
