@@ -11,7 +11,7 @@
 
 #define ALIGN 4
 
-void HyperCubeGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
+void HyperCubeGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
   size_t base = (count/(ALIGN*nranks))*ALIGN;
   *sendcount = base;
   *recvcount = base*nranks;
@@ -82,7 +82,7 @@ struct testColl hyperCubeTest = {
 
 void HyperCubeGetBuffSize(size_t *sendcount, size_t *recvcount, size_t *kerNum, size_t count, int nranks) {
   size_t paramcount, sendInplaceOffset, recvInplaceOffset;
-  HyperCubeGetCollByteCount(sendcount, recvcount, &paramcount, &sendInplaceOffset, &recvInplaceOffset, count, nranks);
+  HyperCubeGetCollByteCount(sendcount, recvcount, &paramcount, &sendInplaceOffset, &recvInplaceOffset, count, 1, nranks);
 
   int power = 0;
   if (nranks > 1 && !(nranks & (nranks - 1))) {

@@ -141,9 +141,9 @@ class TestCase:
             if case.nnodes > 2 and case.proto == 'LL128' and case.algo == 'Tree':
                 print("unsupported cross node case, LL128 may be used on PHB path for Tree")
                 return False
-            # unsupport alltoall + Bulk for RDMA cross node
-            if "Bulk" in case.proto and case.op == 'alltoall_perf':
-                print("unsupport cross node case: alltoall + Bulk for RDMA")
+            # unsupported alltoall/alltoallv + Bulk for RDMA cross node
+            if "Bulk" in case.proto and case.op in ['alltoall_perf', 'alltoallv_perf']:
+                print("unsupported cross node case: alltoall/alltoallv + Bulk for RDMA")
                 return False
         return True
 
@@ -419,7 +419,7 @@ def obtain_test_params():
     parser = argparse.ArgumentParser()
     parser.add_argument('--op', nargs="*", default=['all_gather_perf', 'all_reduce_perf',
                         'broadcast_perf', 'reduce_perf', 'reduce_scatter_perf', 'alltoall_perf',
-                                                    'gather_perf', 'scatter_perf', 'sendrecv_perf', 'hypercube_perf'],
+                        'alltoallv_perf', 'gather_perf', 'scatter_perf', 'sendrecv_perf', 'hypercube_perf'],
                         type=str, metavar='', help='select colloective op list')
     parser.add_argument('--algo', nargs="*", default=['Ring'], type=str, metavar='',
                         help='choose which algorithm list to run')
@@ -733,7 +733,7 @@ def gen_py_crossnode_name_args_list(case, crossnode):
         if case.proto != 'LL128':
             case_name_list.append(case_name + '_rdma_gdr')
             case_arg_list.append(" ".join([rdma_case_args, "gdr"]))
-            if case.ranks / case.nnodes == 8 and case.op in ['all_reduce_perf', 'alltoall_perf'] and case.data_type == 'half':
+            if case.ranks / case.nnodes == 8 and case.op in ['all_reduce_perf', 'alltoall_perf', 'alltoallv_perf'] and case.data_type == 'half':
                 case_name_list.append(case_name + '_rdma_gdr_4nics')
                 case_arg_list.append(
                     " ".join([rdma_case_args, "gdr --use_4nics"]))
@@ -900,7 +900,7 @@ def ppu_hw_perf_case_dump(args):
         if case.nnodes > 1:
             case_args = ' '.join(
                 [case_args, '--launch-mode k8s --cross-node gdr'])
-            if case.op in ['all_reduce_perf', 'alltoall_perf']:
+            if case.op in ['all_reduce_perf', 'alltoall_perf', 'alltoallv_perf']:
                 case_name_list.append(case_name + '_4nics')
                 case_args_list.append(case_args + ' --use_4nics')
         case_name_list.append(case_name)
@@ -952,7 +952,7 @@ def ppu_hw_perf_process(case, output, args):
     index = []  # store out-of-place and in-place time index
 
     def get_index(op):
-        if op == 'alltoall_perf':
+        if op in ['alltoall_perf', 'alltoallv_perf']:
             # out-of-place time
             return index[0]
         else:
