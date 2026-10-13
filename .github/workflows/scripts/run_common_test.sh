@@ -9,6 +9,7 @@ echo "pwd has:"
 ls
 
 python3 ${TEST_ROOT}/run_test.py --op alltoall_perf --algo Ring --proto Simple --data-type int8 --data-size 100.5MB --iters 10 --ranks 4 --devices 0,1,2,3 --auto-detect
+python3 ${TEST_ROOT}/run_test.py --op alltoallv_perf --algo Ring --proto Simple --data-type float --data-size 100.5MB --iters 10 --ranks 4 --devices 0,1,2,3 --auto-detect
 python3 ${TEST_ROOT}/run_test.py --op all_gather_perf --algo Ring --proto LL --data-type int8 --data-size 32MB --iters 10 --ranks 4 --devices 0,1,2,3 --auto-detect
 python3 ${TEST_ROOT}/run_test.py --op all_gather_perf --algo Ring --proto LL128 --data-type int8 --data-size 100.5MB --iters 10 --ranks 4 --devices 0,1,2,3 --auto-detect
 python3 ${TEST_ROOT}/run_test.py --op all_gather_perf --algo Ring --proto Simple --data-type int8 --data-size 512MB --iters 10 --ranks 4 --devices 0,1,2,3 --auto-detect
