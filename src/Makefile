@@ -99,7 +99,7 @@ else
 endif
 
 COMMON_OBJ_FILES := $(COMMON_SRC_FILES:%.cu=${DST_DIR}/%.o)
-BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce alltoall sendrecv scatter gather hypercube
+BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce alltoall alltoallv sendrecv scatter gather hypercube
 BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_perf)
 
 info:

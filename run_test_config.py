@@ -1,5 +1,5 @@
 CollOps = ['all_gather_perf', 'all_reduce_perf', 'broadcast_perf', 'reduce_perf', 'reduce_scatter_perf',
-           'alltoall_perf', 'gather_perf', 'scatter_perf', 'sendrecv_perf', 'hypercube_perf']
+           'alltoall_perf', 'alltoallv_perf', 'gather_perf', 'scatter_perf', 'sendrecv_perf', 'hypercube_perf']
 CollAlgos = ['Tree', 'Ring', 'FC', 'Auto']
 CollProtos = ['LL', 'LL128', 'Simple', 'Signal',
               'SimpleBulk', 'SignalBulk', 'Auto']
