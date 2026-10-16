@@ -9,7 +9,7 @@
 #include "hggc_runtime.h"
 #include "common.h"
 
-void ReduceScatterGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
+void ReduceScatterGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
   *sendcount = (count/nranks)*nranks;
   *recvcount = count/nranks;
   *sendInplaceOffset = 0;
@@ -62,7 +62,7 @@ struct testColl reduceScatterTest = {
 
 void ReduceScatterGetBuffSize(size_t *sendcount, size_t *recvcount, size_t *kerNum, size_t count, int nranks) {
   size_t paramcount, sendInplaceOffset, recvInplaceOffset;
-  ReduceScatterGetCollByteCount(sendcount, recvcount, &paramcount, &sendInplaceOffset, &recvInplaceOffset, count, nranks);
+  ReduceScatterGetCollByteCount(sendcount, recvcount, &paramcount, &sendInplaceOffset, &recvInplaceOffset, count, 1, nranks);
 }
 
 testResult_t ReduceScatterRunTest(struct threadArgs* args, int root, pcclDataType_t type, const char* typeName, pcclRedOp_t op, const char* opName) {
