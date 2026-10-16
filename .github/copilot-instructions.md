@@ -99,7 +99,7 @@ These cases define the intended checker behavior, not exemptions for regressions
 ## Blocker: Build and CLI security
 
 - Reject shell command injection, unsafe `eval`, unintended expansion of command substitutions, backticks, or variables, and argument parsing that corrupts quotes or whitespace in `build.sh` and the CI scripts.
-- A supported build configuration does not lose source files, include paths, libraries, compile definitions, arch targets, or executable permissions across `rel_sym`, `dbg`, `rel_no_sym`, and `--use_mpi`.
+- A supported build configuration does not lose source files, include paths, libraries, compile definitions, arch targets, or executable permissions across `rel_sym`, `dbg`, and `--use_mpi`.
 - Reject hard-coded credentials, tokens, private keys, internal repositories, private absolute paths, and insecure download bypasses.
 
 ## Blocker: License and public-repository safety
@@ -151,7 +151,7 @@ These cases define the intended checker behavior, not exemptions for regressions
 
 - Validation is proportional to the diff.
 - CLI and argument parsing: valid and invalid boundary cases, `--help` output, and option/env interactions.
-- C++ and device code: the affected build configurations (`rel_sym`, and `dbg`/`rel_no_sym`/`--use_mpi` when relevant) with no new warnings.
+- C++ and device code: the affected build configurations (`rel_sym`, and `dbg`/`--use_mpi` when relevant) with no new warnings.
 - Correctness: the affected collective with `-c 1` reporting `#wrong` equal to zero, plus intentional-mismatch and datatype/op boundaries where relevant.
 - Performance: A/B comparison of `algbw`/`busbw` for the isolated benchmark and the full sequence, with the timing mode and rank count stated.
 - MPI: at least two ranks or nodes, or a justified statement that the environment is unavailable; failure propagation is covered when it changes.
