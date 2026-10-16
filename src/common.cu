@@ -1404,11 +1404,6 @@ int main(int argc, char* argv[]) {
         break;
       case 'V':
         deviceCtaCount = (int)strtol(optarg, NULL, 0);
-        if (deviceCtaCount <= 0 || deviceCtaCount > 128) {
-          fprintf(stderr, "device_cta_count must be positive and less than 128, got %d. "
-                  "Using default value 16.\n", deviceCtaCount);
-          deviceCtaCount = 16;
-        }
         break;
       case OPT_API_TIME:
         api_time = true;
@@ -1489,6 +1484,15 @@ int main(int argc, char* argv[]) {
   if (maxBytes < minBytes) {
     printf("maxbytes: %lu can't be less than minbytes: %lu\n", maxBytes, minBytes);
     exit(EXIT_FAILURE);
+  }
+  int maxDeviceCtaCount = 128;
+#ifdef PCCLX_HAS_LSA_BULK
+  if (deviceImpl == 2) maxDeviceCtaCount = 512;
+#endif
+  if (deviceCtaCount <= 0 || deviceCtaCount > maxDeviceCtaCount) {
+    fprintf(stderr, "device_cta_count must be between 1 and %d, got %d. "
+            "Using default value 16.\n", maxDeviceCtaCount, deviceCtaCount);
+    deviceCtaCount = 16;
   }
   if (deviceImpl > 0) {
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
@@ -1679,8 +1683,8 @@ testResult_t run() {
     HGGCCHECK(hggcStreamCreateWithFlags(streams+i, hggcStreamNonBlocking));
 
     int archMajor, archMinor;
-    hggcDeviceGetAttribute(&archMajor, hggcDevAttrComputeCapabilityMajor, gpus[i]);
-    hggcDeviceGetAttribute(&archMinor, hggcDevAttrComputeCapabilityMinor, gpus[i]);
+    HGGCCHECK(hggcDeviceGetAttribute(&archMajor, hggcDevAttrComputeCapabilityMajor, gpus[i]));
+    HGGCCHECK(hggcDeviceGetAttribute(&archMinor, hggcDevAttrComputeCapabilityMinor, gpus[i]));
     minHggcArch = std::min(minHggcArch, 10 * archMajor + archMinor);
   }
 
@@ -1692,6 +1696,16 @@ testResult_t run() {
 
 #ifdef MPI_SUPPORT
   MPI_Allreduce(MPI_IN_PLACE, &minHggcArch, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+#endif
+#ifdef PCCLX_HAS_LSA_BULK
+  if (deviceImpl == 2) {
+    const int maxLsaCtaCount = minHggcArch == 89 ? 512 : 16;
+    if (deviceCtaCount > maxLsaCtaCount) {
+      fprintf(stderr, "D2 LSA test kernels support at most %d CTAs on this architecture, got %d.\n",
+              maxLsaCtaCount, deviceCtaCount);
+      return testInvalidUsage;
+    }
+  }
 #endif
 #if HAVE_BF16
   test_typenum++; // bfloat16

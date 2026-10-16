@@ -218,6 +218,125 @@ __global__ void allReduceLsaVectorizedKernel(pcclWindow_t sendwin, size_t sendof
   bar.sync(pcclCoopCta(), hggc::memory_order_release);
 }
 
+#ifdef PCCLX_HAS_LSA_BULK
+constexpr int BULK_UNROLL = 4;
+constexpr size_t BULK_CHUNK_BYTES = BULK_UNROLL * PCCLX_LSA_BULK_WARP_BYTES;
+
+template <typename T>
+__global__ void allReduceLsaBulkKernel(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct pcclDevComm devComm) {
+  pcclLsaBarrierSession<pcclCoopCta> bar { pcclCoopCta(), devComm, pcclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
+  bar.arrive(pcclCoopCta(), hggc::memory_order_relaxed);
+
+  const int rank = devComm.rank, nRanks = devComm.nRanks;
+  T* sendLocal = (T*)pcclGetLocalPointer(sendwin, sendoffset);
+  T* recvLocal = (T*)pcclGetLocalPointer(recvwin, recvoffset);
+  const size_t nBytes = count * sizeof(T);
+  constexpr int UnrollPeers = 4;
+  constexpr int FragElts = sizeof(uint4) / sizeof(T);
+  const bool useBulk = nRanks > 1 && sizeof(T) == 4 &&
+                       reinterpret_cast<uintptr_t>(sendLocal) % 128 == 0 &&
+                       reinterpret_cast<uintptr_t>(recvLocal) % 128 == 0 &&
+                       nBytes % BULK_CHUNK_BYTES == 0;
+
+  if (!useBulk) {
+    bar.wait(pcclCoopCta(), hggc::memory_order_relaxed);
+    const int globalTid = threadIdx.x + blockDim.x * (rank + blockIdx.x * nRanks);
+    const int globalNthreads = blockDim.x * gridDim.x * nRanks;
+    for (size_t offset = globalTid; offset < count; offset += globalNthreads) {
+      T value = T{0};
+      for (int peer = 0; peer < nRanks; peer++) {
+        T* src = (T*)pcclGetLsaPointer(sendwin, sendoffset, peer);
+        value += src[offset];
+      }
+      for (int peer = 0; peer < nRanks; peer++) {
+        T* dst = (T*)pcclGetLsaPointer(recvwin, recvoffset, peer);
+        dst[offset] = value;
+      }
+    }
+    bar.arrive(pcclCoopCta(), hggc::memory_order_release);
+    bar.wait(pcclCoopCta(), hggc::memory_order_relaxed);
+    return;
+  }
+
+  const int gw = rank + nRanks * (blockIdx.x + gridDim.x * (threadIdx.x / WARP_SIZE));
+  const int gwn = nRanks * gridDim.x * (blockDim.x / WARP_SIZE);
+  char* sendBase = (char*)sendLocal + (size_t)gw * BULK_CHUNK_BYTES;
+  char* recvBase = (char*)recvLocal + (size_t)gw * BULK_CHUNK_BYTES;
+  int64_t iters = (int64_t)(nBytes / BULK_CHUNK_BYTES) - gw;
+
+  uint4 local[BULK_UNROLL];
+  if (iters > 0) {
+#pragma unroll
+    for (int u = 0; u < BULK_UNROLL; u++)
+      local[u] = pcclxLsaBulkWarpLoad(sendBase + u * PCCLX_LSA_BULK_WARP_BYTES);
+  }
+  bar.wait(pcclCoopCta(), hggc::memory_order_relaxed);
+
+  while (iters > 0) {
+    uint4 accum[BULK_UNROLL];
+    int peer = rank + 1;
+    if (peer == nRanks) peer = 0;
+#pragma unroll
+    for (int u = 0; u < BULK_UNROLL; u++) {
+      uint4 remote = pcclxLsaBulkWarpPeerLoad(sendwin, sendBase + u * PCCLX_LSA_BULK_WARP_BYTES, peer);
+      T* a = (T*)&local[u]; const T* b = (const T*)&remote;
+#pragma unroll
+      for (int k = 0; k < FragElts; k++) ((T*)&accum[u])[k] = a[k] + b[k];
+    }
+    for (int dist = 2; dist < nRanks; dist += UnrollPeers) {
+      uint4 loaded[UnrollPeers][BULK_UNROLL];
+#pragma unroll
+      for (int p = 0; p < UnrollPeers; p++) {
+        if (dist + p < nRanks) {
+          int r = rank + dist + p;
+          while (r >= nRanks) r -= nRanks;
+#pragma unroll
+          for (int u = 0; u < BULK_UNROLL; u++)
+            loaded[p][u] = pcclxLsaBulkWarpPeerLoad(sendwin, sendBase + u * PCCLX_LSA_BULK_WARP_BYTES, r);
+        }
+      }
+#pragma unroll
+      for (int p = 0; p < UnrollPeers; p++) {
+        if (dist + p < nRanks) {
+#pragma unroll
+          for (int u = 0; u < BULK_UNROLL; u++) {
+            T* a = (T*)&accum[u]; const T* b = (const T*)&loaded[p][u];
+#pragma unroll
+            for (int k = 0; k < FragElts; k++) a[k] += b[k];
+          }
+        }
+      }
+    }
+#pragma unroll
+    for (int u = 0; u < BULK_UNROLL; u++) local[u] = accum[u];
+    for (int dist = 0; dist < nRanks; dist += UnrollPeers) {
+#pragma unroll
+      for (int p = 0; p < UnrollPeers; p++) {
+        if (dist + p < nRanks) {
+          int r = rank + dist + p;
+          while (r >= nRanks) r -= nRanks;
+#pragma unroll
+          for (int u = 0; u < BULK_UNROLL; u++) {
+            if (r == rank) pcclxLsaBulkWarpStore(recvBase + u * PCCLX_LSA_BULK_WARP_BYTES, local[u]);
+            else pcclxLsaBulkWarpPeerStore(recvwin, recvBase + u * PCCLX_LSA_BULK_WARP_BYTES, r, local[u]);
+          }
+        }
+      }
+    }
+    sendBase += (size_t)gwn * BULK_CHUNK_BYTES;
+    recvBase += (size_t)gwn * BULK_CHUNK_BYTES;
+    iters -= gwn;
+    if (iters > 0) {
+#pragma unroll
+      for (int u = 0; u < BULK_UNROLL; u++)
+        local[u] = pcclxLsaBulkWarpLoad(sendBase + u * PCCLX_LSA_BULK_WARP_BYTES);
+    }
+  }
+  bar.arrive(pcclCoopCta(), hggc::memory_order_release);
+  bar.wait(pcclCoopCta(), hggc::memory_order_relaxed);
+}
+#endif
+
 testResult_t AllReduceRunCollDevice(void* sendwin, size_t sendoffset, void* recvwin, size_t recvoffset,
     size_t count, pcclDataType_t type, pcclRedOp_t op, int root, pcclDevComm* devComm, hggcStream_t stream, int deviceImpl) {
   switch(deviceImpl) {
@@ -226,6 +345,14 @@ testResult_t AllReduceRunCollDevice(void* sendwin, size_t sendoffset, void* recv
                  sendwin, sendoffset, recvwin, recvoffset, count, type, op, root, devComm, stream));
       return testSuccess;
     case 2:
+#ifdef PCCLX_HAS_LSA_BULK
+      if (devComm->nRanks > 1 && wordSize(type) == 4 && count * wordSize(type) % BULK_CHUNK_BYTES == 0 &&
+          sendoffset % 128 == 0 && recvoffset % 128 == 0) {
+        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL_REDUCE(allReduceLsaBulkKernel, type, op),
+                   sendwin, sendoffset, recvwin, recvoffset, count, type, op, root, devComm, stream));
+        return testSuccess;
+      }
+#endif
       TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL_REDUCE(allReduceLsaVectorizedKernel, type, op),
                  sendwin, sendoffset, recvwin, recvoffset, count, type, op, root, devComm, stream));
       return testSuccess;
