@@ -26,7 +26,7 @@ Usage: ./$(basename "$0") [OPTIONS]
 
 Options:
     --ppu_archs <string>      Specify the PPU Archs, any combination of (ppu_10|ppu_15). (default: ppu_10,ppu_15)
-    --build_type <string>     Symbol control. rel_sym: release with some symbols. dbg: debug version. rel_no_sym: release and strip symbol. (default: rel_sym)
+    --build_type <string>     Symbol control. rel_sym: release with some symbols. dbg: debug version. (default: rel_sym)
     --use_mpi                 Specify to build multi-process pccl-tests. (boolean flag)
     --rebuild                 Specify to make clean and remove build directory before building pccl-tests. (boolean flag)
     --dry_run                 Specify to show what commands would be executed without actually running them. (boolean flag)
@@ -61,8 +61,6 @@ function build_test
     fi
     if [[ $build_type == "dbg" ]]; then
         build_cmd_str="${build_cmd_str} DEBUG=1"
-    elif [[ $build_type == "rel_no_sym" ]]; then
-        build_cmd_str="${build_cmd_str} REL_NO_SYM=1"
     fi
     if [ $verbose -eq 1 ]; then
         build_cmd_str="${build_cmd_str} VERBOSE=1"

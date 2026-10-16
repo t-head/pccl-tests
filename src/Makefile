@@ -21,16 +21,6 @@ HGGC_MINOR = $(shell echo $(HGGC_VERSION) | cut -d "." -f 2)
 
 HGFLAGS    := -std=c++17 -x hg -Xcompiler -fPIC -DOMPI_SKIP_MPICXX
 
-ifeq ($(REL_NO_SYM), 1)
-  ifneq ($(PCCL_TESTS_ROOT),)
-    PREFIX_MAP_FLAGS := $(shell \
-      $(HGCC) -Xcompiler -ffile-prefix-map=/tmp=. -x c /dev/null -c -o /dev/null 2>/dev/null \
-      && echo "-ffile-prefix-map=$(PCCL_TESTS_ROOT)=." \
-      || echo "-fdebug-prefix-map=$(PCCL_TESTS_ROOT)=. -fmacro-prefix-map=$(PCCL_TESTS_ROOT)=.")
-    HGFLAGS += $(PREFIX_MAP_FLAGS:%=-Xcompiler %)
-  endif
-endif
-
 ifneq ($(PCCL_HOME),)
   HGFLAGS += -I$(PCCL_HOME)/include/
   HGLDFLAGS += -L$(PCCL_HOME)/lib -Xlinker -L=$(PCCL_HOME)/lib \
@@ -129,6 +119,3 @@ ${DST_DIR}/%_perf:${DST_DIR}/%.o ${COMMON_OBJ_FILES}  $(TEST_VERIFIABLE_OBJS)
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(HGCC) -o $@ $^ ${HGLDFLAGS}
-ifeq ($(REL_NO_SYM), 1)
-	strip --strip-all $@
-endif
