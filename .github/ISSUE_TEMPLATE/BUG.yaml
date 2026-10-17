@@ -1,0 +1,65 @@
+name: pccl-tests bug report
+description: Report a wrong result, crash, hang, build failure, or unexpected performance from a pccl-tests benchmark
+title: "[Bug]: "
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the unexpected behavior and how to reproduce it. Issues and attachments are public:
+        remove credentials and redact sensitive hostnames, addresses, and paths from diagnostics
+        before sharing, but keep the technical content intact. Check
+        [existing issues](https://github.com/t-head/pccl-tests/issues) for related reports, and see
+        [README.md](https://github.com/t-head/pccl-tests/blob/main/README.md) for build and usage.
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: Observed behavior
+      options:
+        - Incorrect results or nonzero '#wrong'
+        - Lower bandwidth or higher latency than expected
+        - Application crash or runtime error (PCCL/HGGC/MPI)
+        - Application hang or timeout
+        - Build or installation failure
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: Describe what you expected and what happened, and how it impacts your use case or affected scenarios. For a correctness failure, report the `#wrong` count and the affected collective, datatype, op, and message size. Include the first error or warning, if any.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Include the `build.sh` options (for example `--use_mpi`, `--ppu_archs`, `--build_type`), the benchmark executable and its arguments, the MPI launch command and rank/node counts, relevant environment variables (for example `NCCL_TESTS_SPLIT_MASK`), how often it fails, and whether an earlier commit or PCCL version worked. If you cannot reproduce it reliably, describe your observations instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: pccl-tests and PCCL version
+      description: The pccl-tests release tag or commit, and the PCCL library version the benchmarks were built against.
+      placeholder: "e.g. v2.2.1, PCCL 2.2.0"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: SDK and execution environment
+      description: T-Head SAIL SDK version, OS, bare-metal or container (image version if known), PPU model and arch (ppu_10/ppu_15), node count, PPUs per node, and the Open MPI version when a multi-process build is used.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Original logs and correctness dumps
+      description: |
+        Attach the unedited console log or diagnostic output. For a correctness failure, also attach
+        the per-rank file written by `--report_check_filename <prefix>` (`<prefix>_<rank>.log`).
+        Redact sensitive hostnames and addresses.
+    validations:
+      required: true
