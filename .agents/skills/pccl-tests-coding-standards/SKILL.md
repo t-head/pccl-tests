@@ -16,7 +16,7 @@ Follow the style and abstractions of the surrounding pccl-tests code. pccl-tests
 - Keep implementation, declarations, build definitions, tests, and documentation consistent with one another.
 - Each collective benchmark lives in its own `src/<op>.cu` and shares the harness in `src/common.cu` and `src/common.h`. A new benchmark is registered in the `src` Makefile target list and exposes the weak-symbol `ncclTestEngine` override the same way the existing benchmarks do.
 - Add new source files and dependencies to the established Make build driven by `build.sh`. Do not introduce a dependency when the existing standard library or project infrastructure is sufficient.
-- Preserve the supported build modes: `rel_sym`, `dbg`, and `rel_no_sym`; the single-process and `--use_mpi` multi-process builds; and the `PPU_ARCHS` targets. Platform- or version-specific behavior must be capability- or version-gated and must not break other supported configurations.
+- Preserve the supported build modes: `rel_sym` and `dbg`; the single-process and `--use_mpi` multi-process builds; and the `PPU_ARCHS` targets. Platform- or version-specific behavior must be capability- or version-gated and must not break other supported configurations.
 - Guard PCCL-version-specific code with `#if PCCL_VERSION_CODE >= PCCL_VERSION(...)` and provide the fallback for older versions, matching the existing guards.
 - Build and shell changes must preserve the currently supported tool and shell environments, quote external input, and avoid unsafe command evaluation.
 
@@ -64,7 +64,7 @@ Validation must be proportional to the change:
 
 | Change | Required validation |
 |---|---|
-| Source or build logic | Build every affected supported configuration (`rel_sym`, and `dbg`/`rel_no_sym`/`--use_mpi` when relevant) with no new warnings |
+| Source or build logic | Build every affected supported configuration (`rel_sym`, and `dbg`/`--use_mpi` when relevant) with no new warnings |
 | Collective or data path | Run the affected benchmark with correctness checking and report `#wrong`, plus relevant size, datatype, and op boundaries |
 | CLI or output contract | Check valid and invalid input, `--help`, and consistency between the default report and any structured output |
 | Performance-sensitive path | Compare before-and-after `algbw`/`busbw` for the isolated benchmark and the relevant full sequence, with the timing mode stated |
