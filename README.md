@@ -116,6 +116,7 @@ with `-h` or `--help` to see the options available in your build.
   - `-a, --average <0/1/2/3>` Report rank 0, average, minimum, or maximum time.
     Default: `2`.
   - `--elapsed_type <0/1/2>` CPU, HGGC event, or HGPTI timing. Default: `0`.
+    HGPTI timing (`2`) is not supported with `-H 1`.
   - `--api_time` Report host API overhead in the default report mode
     (`--report_type 0`). Default: disabled.
   - `--acu_profile <0/1>` Enable Asight Compute profiling. Default: `0`.
@@ -133,7 +134,8 @@ with `-h` or `--help` to see the options available in your build.
   - `-z, --blocking <0/1>` Wait and synchronize after each collective.
     Default: `0`.
   - `-G, --hggcgraph <N>` Capture iterations in an HGGC graph and replay it
-    `N` times. Default: `0` (disabled).
+    `N` times. Default: `0` (disabled). With `-H 1`, each public Put must be
+    at most 1 GiB; larger calls are rejected before capture.
   - `-R, --local_register <0/1/2>` Disable buffer registration, use local
     registration, or use symmetric registration. Default: `0`.
   - `-x, --cta_policy <0/1/2>` CTA policy: default, efficiency, or zero.
@@ -142,6 +144,15 @@ with `-h` or `--help` to see the options available in your build.
     the standard collective API. Default: `0`. Values greater than `0`
     require PCCL 2.2 or later and symmetric registration (`-R 2`).
     Support varies by benchmark.
+  - `-H, --host_rma_implementation <1>` Use host one-sided RMA
+    (`pcclPutSignal`/`pcclWaitSignal`) instead of the built-in collective.
+    Supported by sendrecv, alltoall, all_gather, broadcast, gather, and
+    scatter. Must be `1`: PCCL supports a single RMA context. Requires PCCL
+    2.3 or later, symmetric registration (`-R 2`), and is mutually exclusive
+    with `-D`. Use CPU timing (`--elapsed_type 0`) or HGGC event timing
+    (`--elapsed_type 1`); HGPTI timing (`--elapsed_type 2`) is rejected before
+    initialization. With `-G > 0`, calls whose actual single public Put exceeds
+    1 GiB are rejected.
   - `-V, --device_cta_count <N>` Number of CTAs for device-side implementations,
     from `1` to `128`. Default: `16`. With `-D 2` and no explicit `-V`, the
     default becomes one CTA per CU (max 128) when the minimum compute capability
@@ -163,7 +174,8 @@ with `-h` or `--help` to see the options available in your build.
 
   `--init_blocking` and `--cta_policy` configure multi-process initialization
   with `--init_type 0` or `2`. For a single process, these modes use
-  `pcclCommInitAll` instead.
+  `pcclCommInitAll` instead, except with `-H 1`, which uses grouped
+  `pcclCommInitRankConfig` and applies the same configuration options.
 
 - Debugging and failure testing
 
@@ -176,6 +188,50 @@ with `-h` or `--help` to see the options available in your build.
   - `--abnormal_mode <0/1/2/3>` Failure-injection mode: disabled, datatype
     mismatch, count mismatch, or delayed processes. Default: `0`.
     These modes can deliberately hang or delay a run.
+
+### Host RMA prerequisites and diagnostics
+
+Host RMA support is determined per communicator by the `hostRmaSupport` field
+returned by `pcclCommQueryProperties`. Selecting `-R 2` requests symmetric
+registration, but does not guarantee that the communicator supports symmetric
+memory or Host RMA.
+
+Host RMA graph runs (`-H 1 -G > 0`) have a temporary, conservative size guard
+for the library's CE graph large-Put limitation. Each requested message size
+is checked after datatype and collective count rounding, before that size's
+untimed pre-measurement collective or graph capture. A single public Put
+strictly larger than 1073741824 bytes (1 GiB) fails the run; exactly 1 GiB is
+allowed. Communicator initialization and the existing non-graph warm-ups are
+unchanged, and `--init_only` does not perform this check.
+
+The limit applies to the actual public Put size, not the total send/receive
+buffer or the raw `-e` value. With the current single RMA context, sendrecv
+and broadcast put the full adjusted message; alltoall, all_gather, gather,
+and scatter put the adjusted per-rank portion. For example, a two-rank
+alltoall message of 2 GiB produces 1 GiB public Puts and is allowed. A float
+sendrecv request of 1 GiB plus one byte rounds down to a 1 GiB Put and is
+also allowed. The guard does not distinguish CE from proxy routes, so it
+also rejects potentially proxy-routed oversized graph calls. Reduce the
+single Put size or use `-G 0` for large non-graph transfers. Failure-injection
+modes (`--abnormal_mode`) can still deliberately hang a run.
+
+Cross-node execution requires a usable RMA proxy backend on all ranks, together
+with cross-NIC connectivity and cuMem GDR support. PCCL can select its built-in
+`GIN_IB_PROXY` backend; an external plugin library is not necessarily required.
+The current PCCL implementation does not additionally require device GIN `FULL`
+mode or that the communicator owns its shared resources for the RMA proxy
+capability check.
+
+If the capability check fails, enable initialization and network diagnostics:
+
+```shell
+export PCCL_DEBUG=INFO
+export PCCL_DEBUG_SUBSYS=INIT,NET
+```
+
+For MPI runs, propagate these variables to all processes. Check the logs for
+RMA plugin initialization and selection, symmetric memory support, and network
+capabilities before retrying `-H 1 -R 2`.
 
 ### Running multiple operations in parallel
 
