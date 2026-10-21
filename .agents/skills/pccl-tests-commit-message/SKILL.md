@@ -20,11 +20,11 @@ A commit message that violates any mandatory requirement is rejected. The preche
 
 [optional concise body: a key feature list or prose paragraphs]
 
-[optional: Closes #<issue> or Refs #<issue>]
+Closes #<issue> or Refs #<issue>
 Signed-off-by: Your Name <your@email.com>
 ```
 
-The type, the scope, the body, and the issue reference are optional. A scope, when present, contains one lowercase word. An agent-generated message should use a key feature list by default; concise prose paragraphs that explain the problem, solution, and relevant limitations are also accepted.
+The type, the scope, and the body are optional. A scope, when present, contains one lowercase word. An agent-generated message should use a key feature list by default; concise prose paragraphs that explain the problem, solution, and relevant limitations are also accepted.
 
 ## Mandatory requirements
 
@@ -44,8 +44,8 @@ The type, the scope, the body, and the issue reference are optional. A scope, wh
 
 ### Footer
 
-9. A blank line separates the footer from the optional body. Within the footer, the optional issue reference is immediately followed by the `Signed-off-by` trailers on the next line, with no blank line between them.
-10. An optional issue reference, when present, has the form `Closes #<issue>` or `Refs #<issue>`.
+9. A blank line separates the footer from the optional body. Within the footer, the issue reference is immediately followed by the `Signed-off-by` trailers on the next line, with no blank line between them.
+10. The footer contains one issue reference of the form `Closes #<issue>` or `Refs #<issue>`, referencing an open issue of this repository.
 11. The message ends with at least one trailer of the form `Signed-off-by: Name <email>`. Committing with `git commit -s` using the configured Git identity is the recommended way to add it. The email may be a private or anonymous address and is not required to match the commit author. By adding the trailer, the contributor certifies the contribution under the Developer Certificate of Origin, Version 1.1.
 
 ### Content
@@ -66,7 +66,7 @@ Requirement 7 applies only when the body uses a key feature list. pccl-tests has
 6. Key features are ordered by importance and describe effects rather than implementation steps.
 7. A change to a public contract, such as a benchmark option, a testcase key, a default value, an output column, or an environment variable, is stated in a key feature.
 8. The scope is omitted when the change spans several areas.
-9. Issue references in the commit message are optional. Include `Closes #<issue>` or `Refs #<issue>` only when the reference helps connect the change to an existing issue; the required issue reference belongs in the pull request description.
+9. Use `Closes #<issue>` when merging the pull request resolves the issue and `Refs #<issue>` when the issue remains open; the referenced issue is the same open issue the pull request description references.
 10. Measured performance data are attached to the associated issue rather than included in the commit message.
 
 ## Type and scope
@@ -98,7 +98,7 @@ Requirement 7 applies only when the body uses a key feature list. pccl-tests has
 2. Determine the effect of the complete change, and choose the type and the scope.
 3. Write the subject in the imperative mood.
 4. Choose the body form. An agent normally writes a concise key feature list; use prose paragraphs when they explain the problem, solution, and relevant limitations more clearly.
-5. Add an optional issue reference only when it improves traceability.
+5. Add the issue reference: `Closes #<issue>` when merging resolves the issue, otherwise `Refs #<issue>`, referencing the open issue behind the change.
 6. Commit with `git commit -s`, which appends the `Signed-off-by` trailer for the configured Git identity and records the certification under the Developer Certificate of Origin, Version 1.1.
 7. Check the message against the mandatory requirements and the recommendations.
 
@@ -128,6 +128,7 @@ docs: clarify the MPI build steps
 - describe the --use_mpi build option
 - correct the multi-node mpirun example
 
+Refs #34
 Signed-off-by: Your Name <your@email.com>
 ```
 
@@ -140,6 +141,7 @@ The following messages are rejected:
 | `fix: update` | 4 |
 | `fix(copy-engine): reject invalid input` | 2 |
 | `- validate input.` | 7 |
+| A message without an issue reference | 10 |
 | A message without a `Signed-off-by` trailer | 11 |
 
 ## Output
