@@ -109,6 +109,12 @@ These cases define the intended checker behavior, not exemptions for regressions
 - Reject internal CI configuration, internal code review links, internal issue identifiers, internal download endpoints, secrets, build artifacts, temporary files, and inaccessible submodule or LFS objects.
 - The README Copyright section retains the license statement and the NVIDIA and T-Head copyright notices.
 
+## Blocker: CI gate integrity
+
+- A new test added to `.github/workflows/scripts/casecmd.list` runs in CI as a test matrix entry and is covered by `PCCL Tests Gate` automatically; a new top-level workflow job is added to `tests-gate.needs`.
+- A required job failure, cancellation, or an unexpected skip on a pull request fails `PCCL Tests Gate`; a green gate beside a needed job that did not succeed is a defect.
+- Changes to CI routing or gate rules are verified against both passing and failing cases: a clean run, a failed job, and the PR-only jobs on pull_request versus push events.
+
 ## Major: Performance validity and regression risk
 
 - Report new synchronization, allocation, context switching, copies, logging, or driver queries in the measured hot path.
