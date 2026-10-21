@@ -116,6 +116,8 @@ struct testEngine {
   testResult_t (*getDevCommRequirements)(int deviceImpl, pcclDevCommRequirements* reqs, pcclComm_t comm);
   testResult_t (*runCollDevice)(void* sendwin, size_t sendoffset, void* recvwin, size_t recvoffset,
       size_t count, pcclDataType_t type, pcclRedOp_t op, int root, pcclDevComm* devComm, hggcStream_t stream, int deviceImpl);
+  testResult_t (*runCollHostRma)(void* sendwin, size_t sendoffset, void* recvwin, size_t recvoffset,
+      size_t count, pcclDataType_t type, int root, pcclComm_t comm, hggcStream_t stream);
 #endif
 };
 
@@ -283,6 +285,21 @@ static size_t wordSize(pcclDataType_t type) {
     default: return 0;
   }
 }
+
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+#pragma weak pcclCommQueryProperties
+#pragma weak pcclWinGetUserPtr
+#pragma weak pcclPutSignal
+#pragma weak pcclWaitSignal
+
+extern pcclWaitSignalDesc_t* getRmaWaitDescs(int nDescs);
+extern void freeRmaWaitDescs(void);
+#endif
+
+extern int rmaCtxCount; // RMA contexts to provision for host RMA (-H); always 1
+
+#define HOST_RMA_IMPL 10
+#define NUM_RMA_SIG 4
 
 extern int test_pcclVersion; // init'd with pcclGetVersion()
 extern int test_opnum;
