@@ -46,6 +46,55 @@ void SendRecvGetBw(size_t count, int typesize, double sec, double* algBw, double
   *busBw = baseBw * factor;
 }
 
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+testResult_t SendRecvRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow, size_t recvoffset,
+                            size_t count, pcclDataType_t type, int root, pcclComm_t comm, hggcStream_t stream) {
+  (void)root;
+  int rank, nranks;
+  PCCLCHECK(pcclCommUserRank(comm, &rank));
+  PCCLCHECK(pcclCommCount(comm, &nranks));
+
+  int recvPeer = (rank - 1 + nranks) % nranks;
+  int sendPeer = (rank + 1) % nranks;
+
+  pcclWindow_t sendWin = (pcclWindow_t)sendWindow;
+  pcclWindow_t recvWin = (pcclWindow_t)recvWindow;
+
+  void* sendPtr = NULL;
+  void* recvPtr = NULL;
+  PCCLCHECK(pcclWinGetUserPtr(comm, sendWin, &sendPtr));
+  PCCLCHECK(pcclWinGetUserPtr(comm, recvWin, &recvPtr));
+
+  // Split the message into near-equal chunks round-robin across the RMA contexts
+  // provisioned by -H: chunk c goes to context c.
+  const size_t eltSize = wordSize(type);
+  const int nctx = rmaCtxCount;
+  const size_t base = count / nctx;
+  const size_t rem  = count % nctx;
+
+  PCCLCHECK(pcclGroupStart());
+  size_t elemOff = 0;
+  for (int c = 0; c < nctx; c++) {
+    size_t chunk = base + ((size_t)c < rem ? 1 : 0);
+    if (chunk == 0) continue;
+    size_t byteOff = elemOff * eltSize;
+    PCCLCHECK(pcclPutSignal((char*)sendPtr + sendoffset + byteOff, chunk, type, sendPeer,
+                      recvWin, recvoffset + byteOff, c % NUM_RMA_SIG, c, 0, comm, stream));
+    elemOff += chunk;
+  }
+  PCCLCHECK(pcclGroupEnd());
+
+  for (int c = 0; c < nctx; c++) {
+    size_t chunk = base + ((size_t)c < rem ? 1 : 0);
+    if (chunk == 0) continue;
+    pcclWaitSignalDesc_t waitDesc = {1, recvPeer, c % NUM_RMA_SIG, c};
+    PCCLCHECK(pcclWaitSignal(1, &waitDesc, comm, stream));
+  }
+
+  return testSuccess;
+}
+#endif
+
 testResult_t SendRecvRunColl(void* sendbuff, void* recvbuff, size_t count, pcclDataType_t type, pcclRedOp_t op, int root, pcclComm_t comm, hggcStream_t stream) {
   int nRanks;
   PCCLCHECK(pcclCommCount(comm, &nRanks));
@@ -112,6 +161,10 @@ testResult_t SendRecvRunTest(struct threadArgs* args, int root, pcclDataType_t t
 struct testEngine sendRecvEngine = {
   SendRecvGetBuffSize,
   SendRecvRunTest
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+  , NULL, NULL,
+  SendRecvRmaPut
+#endif
 };
 
 #pragma weak pcclTestEngine=sendRecvEngine

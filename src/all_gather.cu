@@ -49,6 +49,66 @@ void AllGatherGetBw(size_t count, int typesize, double sec, double* algBw, doubl
   *busBw = baseBw * factor;
 }
 
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+testResult_t AllGatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow, size_t recvoffset,
+                             size_t count, pcclDataType_t type, int root, pcclComm_t comm, hggcStream_t stream) {
+  (void)root;
+  int rank, nranks;
+  PCCLCHECK(pcclCommUserRank(comm, &rank));
+  PCCLCHECK(pcclCommCount(comm, &nranks));
+
+  pcclWindow_t sendWin = (pcclWindow_t)sendWindow;
+  pcclWindow_t recvWin = (pcclWindow_t)recvWindow;
+
+  void* sendPtr = NULL;
+  void* recvPtr = NULL;
+  PCCLCHECK(pcclWinGetUserPtr(comm, sendWin, &sendPtr));
+  PCCLCHECK(pcclWinGetUserPtr(comm, recvWin, &recvPtr));
+
+  size_t eltSize = wordSize(type);
+  size_t bytes = count * eltSize;
+  const int nctx = rmaCtxCount;
+
+  bool isInPlace = ((char*)sendPtr + sendoffset == (char*)recvPtr + recvoffset + rank * bytes);
+  size_t peerWinOffset = recvoffset + rank * bytes;
+
+  pcclWaitSignalDesc_t* waitDescs = (pcclWaitSignalDesc_t*)malloc(sizeof(pcclWaitSignalDesc_t) * nranks);
+  if (waitDescs == NULL) {
+    return testInternalError;
+  }
+
+  int descIdx = 0;
+  for (int i = 0; i < nranks; i++) {
+    if (isInPlace && i == rank) {
+      continue;
+    }
+    waitDescs[descIdx].opCnt = 1;
+    waitDescs[descIdx].peer = i;
+    waitDescs[descIdx].sigIdx = i % NUM_RMA_SIG;
+    waitDescs[descIdx].ctx = (i + rank) % nctx;
+    descIdx++;
+  }
+
+  PCCLCHECK(pcclGroupStart());
+  for (int peer = 0; peer < nranks; peer++) {
+    int targetRank = (rank + peer) % nranks;
+    if (isInPlace && targetRank == rank) {
+      continue;
+    }
+    PCCLCHECK(pcclPutSignal((char*)sendPtr + sendoffset, count, type, targetRank,
+                      recvWin, peerWinOffset, rank % NUM_RMA_SIG, (rank + targetRank) % nctx, 0, comm, stream));
+  }
+  PCCLCHECK(pcclGroupEnd());
+
+  // In-place single-rank runs skip every descriptor; pcclWaitSignal rejects nDesc == 0.
+  if (descIdx > 0) {
+    PCCLCHECK(pcclWaitSignal(descIdx, waitDescs, comm, stream));
+  }
+  free(waitDescs);
+  return testSuccess;
+}
+#endif
+
 testResult_t AllGatherRunColl(void* sendbuff, void* recvbuff, size_t count, pcclDataType_t type, pcclRedOp_t op, int root, pcclComm_t comm, hggcStream_t stream) {
   PCCLCHECK(pcclAllGather(sendbuff, recvbuff, count, type, comm, stream));
   return testSuccess;
@@ -92,6 +152,10 @@ testResult_t AllGatherRunTest(struct threadArgs* args, int root, pcclDataType_t 
 struct testEngine allGatherEngine = {
   AllGatherGetBuffSize,
   AllGatherRunTest
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+  , NULL, NULL,
+  AllGatherRmaPut
+#endif
 };
 
 #pragma weak pcclTestEngine=allGatherEngine
