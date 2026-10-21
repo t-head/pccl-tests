@@ -367,21 +367,24 @@ jobs:
           exit 1
 
       - name: Require build and test jobs to succeed
-        # These jobs must run on PRs, pushes, and manual runs.
+        # prepare, build, build-test-notsm, and summary must succeed on every
+        # event. The test matrix expands only on pull_request events and has
+        # always been skipped on push and workflow_dispatch, so test is
+        # required only on pull requests; its skip elsewhere is expected.
         if: >-
           always() && (
             needs.prepare.result != 'success' ||
             needs.build.result != 'success' ||
-            needs.test.result != 'success' ||
             needs.build-test-notsm.result != 'success' ||
-            needs.summary.result != 'success'
+            needs.summary.result != 'success' ||
+            (github.event_name == 'pull_request' && needs.test.result != 'success')
           )
         run: |
           echo "::error::A required build or test job did not succeed."
           exit 1
 
       - name: Reject skipped jobs on pull requests
-        # Outside PRs, the five PR-only checks may be skipped.
+        # Outside PRs, the five PR-only checks and the test matrix may be skipped.
         if: >-
           always() && github.event_name == 'pull_request' &&
           contains(needs.*.result, 'skipped')

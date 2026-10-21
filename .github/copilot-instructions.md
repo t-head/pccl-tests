@@ -47,7 +47,7 @@ Review every pull request in this repository according to the following rules.
 These cases define the intended checker behavior, not exemptions for regressions. Before reporting a similar issue, verify the current implementation and demonstrate the failing input; group related boundary cases in one finding rather than rediscovering them over successive reviews.
 
 - A key-feature list starts with `- ` (hyphen-space); a lone `-` is an empty item. Prose beginning with `--option` or `-1` is not a list and is not checked by requirement 7.
-- Issue-reference candidates occupy the complete line. Prose such as `Fix issue 12 by ...` is not a footer reference; standalone `Closes issue 12` and `Closes #abc` are malformed references. A reference belongs in the final contiguous footer, not before later prose.
+- Issue-reference candidates occupy the complete line. Prose such as `Fix issue 12 by ...` is not a footer reference; standalone `Closes issue 12` and `Closes #abc` are malformed references. A reference belongs in the final contiguous footer, not before later prose. The footer must contain a reference; a sign-off-only footer is rejected as a missing reference.
 - Issue numbers are accepted only as ASCII digits; a reference candidate containing a non-ASCII digit such as an Arabic-Indic numeral is still detected and reported as malformed rather than silently treated as prose or converted to the corresponding ASCII issue.
 - A typed commit title's colon may be followed by one or more spaces; extra whitespace does not bypass the subject, scope, or non-descriptive-title checks.
 - A sign-off alone is not a commit title. DCO identities must come from the contiguous trailing sign-off block; an author's sign-off elsewhere in the body does not satisfy DCO.
@@ -113,6 +113,7 @@ These cases define the intended checker behavior, not exemptions for regressions
 
 - A new test added to `.github/workflows/scripts/casecmd.list` runs in CI as a test matrix entry and is covered by `PCCL Tests Gate` automatically; a new top-level workflow job is added to `tests-gate.needs`.
 - A required job failure, cancellation, or an unexpected skip on a pull request fails `PCCL Tests Gate`; a green gate beside a needed job that did not succeed is a defect.
+- The `test` matrix job expands only on `pull_request` events and is expected to be skipped on `push` and `workflow_dispatch`; the gate requires it to succeed on pull requests and tolerates its skip elsewhere. Do not report the non-PR skip as a gate defect.
 - Changes to CI routing or gate rules are verified against both passing and failing cases: a clean run, a failed job, and the PR-only jobs on pull_request versus push events.
 
 ## Major: Performance validity and regression risk
