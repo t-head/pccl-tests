@@ -121,6 +121,8 @@ static char* report_check_filename = NULL;
 static bool api_time = false;
 static int deviceImpl = 0;
 int deviceCtaCount = 16;
+static bool deviceCtaCountSet = false;
+static int deviceMpCount = 0;
 
 inline void print_header(reportType_t rep_type) {
   const char* timeStr = (elapsed_type == 0) ? " cpu_time " : (elapsed_type == 1) ? "event_time" : "hgpti_time";
@@ -1405,6 +1407,7 @@ int main(int argc, char* argv[]) {
         break;
       case 'V':
         deviceCtaCount = (int)strtol(optarg, NULL, 0);
+        deviceCtaCountSet = true;
         if (deviceCtaCount <= 0 || deviceCtaCount > 128) {
           fprintf(stderr, "device_cta_count must be positive and less than 128, got %d. "
                   "Using default value 16.\n", deviceCtaCount);
@@ -1680,9 +1683,10 @@ testResult_t run() {
     HGGCCHECK(hggcStreamCreateWithFlags(streams+i, hggcStreamNonBlocking));
 
     int archMajor, archMinor;
-    hggcDeviceGetAttribute(&archMajor, hggcDevAttrComputeCapabilityMajor, gpus[i]);
-    hggcDeviceGetAttribute(&archMinor, hggcDevAttrComputeCapabilityMinor, gpus[i]);
+    HGGCCHECK(hggcDeviceGetAttribute(&archMajor, hggcDevAttrComputeCapabilityMajor, gpus[i]));
+    HGGCCHECK(hggcDeviceGetAttribute(&archMinor, hggcDevAttrComputeCapabilityMinor, gpus[i]));
     minHggcArch = std::min(minHggcArch, 10 * archMajor + archMinor);
+    HGGCCHECK(hggcDeviceGetAttribute(&deviceMpCount, hggcDevAttrMultiProcessorCount, gpus[i]));
   }
 
   pcclConfig_t config = PCCL_CONFIG_INITIALIZER;
@@ -1694,6 +1698,9 @@ testResult_t run() {
 #ifdef MPI_SUPPORT
   MPI_Allreduce(MPI_IN_PLACE, &minHggcArch, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
 #endif
+  // Default: one CTA per CU on PPU 1.5, 16 otherwise.
+  if (deviceImpl == 2 && !deviceCtaCountSet && minHggcArch == 89 && deviceMpCount > 0)
+    deviceCtaCount = std::min(deviceMpCount, 128);
 #if HAVE_BF16
   test_typenum++; // bfloat16
 #endif
