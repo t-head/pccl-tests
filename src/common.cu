@@ -16,6 +16,7 @@
 #include <hggc_profiler_api.h> // for Asight Compute profiling
 #include <stdlib.h>
 #include <limits.h>
+#include <errno.h>
 #include "common.h"
 #ifndef DISABLE_HGPTI
 #include "hgpti_common.h"
@@ -94,6 +95,7 @@ static int warmup_iters = 5;
 static int iters = 20;
 static int abnormal_mode = 0;
 static int agg_iters = 1;
+static int run_cycles = 1;
 static int pcclop = pcclSum;
 static int pccltype = pcclFloat32;
 static int pcclroot = 0;
@@ -1112,22 +1114,29 @@ testResult_t TimeTest(struct threadArgs* args, pcclDataType_t type, const char* 
   }
 
   // Benchmark
-  if (size_list_num == 0) {
-    for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
-      TimeTestPerSize(args, type, size, typeName, op, opName, root, busbw_file);
+  testResult_t result = testSuccess;
+  long repeat = run_cycles;
+  do {
+    if (size_list_num == 0) {
+      for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
+        result = TimeTestPerSize(args, type, size, typeName, op, opName, root, busbw_file);
+        if (result != testSuccess) break;
+      }
+    } else {
+      for (int i = 0; i < size_list_num; i++) {
+        ssize_t size = listBytes[i];
+        result = TimeTestPerSize(args, type, size, typeName, op, opName, root, busbw_file);
+        if (result != testSuccess) break;
+      }
     }
-  } else {
-    for (int i = 0; i < size_list_num; i++) {
-      ssize_t size = listBytes[i];
-      TimeTestPerSize(args, type, size, typeName, op, opName, root, busbw_file);
-    }
-  }
+  } while (result == testSuccess && --repeat);
 
   if (elapsed_type == 1) {
     if (args->startEvents) free(args->startEvents);
     if (args->stopEvents) free(args->stopEvents);
   }
 
+  TESTCHECK(result);
   return testSuccess;
 }
 
@@ -1263,6 +1272,7 @@ int main(int argc, char* argv[]) {
     {"iters", required_argument, 0, 'n'},
     {"agg_iters", required_argument, 0, 'm'},
     {"warmup_iters", required_argument, 0, 'w'},
+    {"run_cycles", required_argument, 0, 'N'},
     {"init_type", required_argument, 0, 'p'},
     {"check", required_argument, 0, 'c'},
     {"op", required_argument, 0, 'o'},
@@ -1297,7 +1307,7 @@ int main(int argc, char* argv[]) {
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:T:hG:a:R:x:s:k:D:V:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:p:c:o:d:r:z:T:hG:a:R:x:s:k:D:V:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1330,6 +1340,17 @@ int main(int argc, char* argv[]) {
       case 'w':
         warmup_iters = (int)strtol(optarg, NULL, 0);
         break;
+      case 'N': {
+        char* end;
+        errno = 0;
+        long long cycles = strtoll(optarg, &end, 0);
+        if (errno == ERANGE || end == optarg || *end != '\0' || cycles < 0 || cycles > INT_MAX) {
+          fprintf(stderr, "run_cycles must be an integer between 0 and %d, got '%s'\n", INT_MAX, optarg);
+          return EXIT_FAILURE;
+        }
+        run_cycles = (int)cycles;
+        break;
+      }
       case 'p':
         init_type = (int)strtol(optarg, NULL, 0);
         break;
@@ -1437,6 +1458,7 @@ int main(int argc, char* argv[]) {
             "[-n,--iters <iteration count>] \n\t"
             "[-m,--agg_iters <aggregated iteration count>] \n\t"
             "[-w,--warmup_iters <warmup iteration count>] \n\t"
+            "[-N,--run_cycles <cycle count> run & print each cycle (default: 1; 0=infinite)] \n\t"
             "[-p,--init_type <0/1/2>] \n\t"
             "[-c,--check <0/1>] \n\t"
             "[-o,--op <sum/prod/min/max/avg/mulsum/all>] \n\t"
