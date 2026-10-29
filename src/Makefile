@@ -14,7 +14,6 @@ PPU_SDK ?= /usr/local/PPU_SDK
 HGCC ?= $(PPU_SDK)/bin/hgcc
 PPU_LIB ?= $(PPU_SDK)/lib
 PPU_INC ?= $(PPU_SDK)/include
-PCCL_TESTS_ROOT := $(abspath ..)
 HGGC_VERSION = $(strip $(shell which $(HGCC) >/dev/null && $(HGCC) --version | grep "version" | sed 's/.*version //' | sed 's/ .*//'))
 HGGC_MAJOR = $(shell echo $(HGGC_VERSION) | cut -d "." -f 1)
 HGGC_MINOR = $(shell echo $(HGGC_VERSION) | cut -d "." -f 2)
@@ -76,9 +75,14 @@ endif
 HGFLAGS += $(shell echo "$(PPU_OPTION)" | sed "s/;/ /g")
 
 .PHONY: build clean
+.DEFAULT_GOAL := build
 
 BUILDDIR ?= ../build
 DST_DIR := $(BUILDDIR)
+
+FORCE:
+.PHONY: FORCE
+
 COMMON_SRC_FILES := common.cu barrier.cu
 
 ifeq ($(DISABLE_HGPTI),1)
@@ -105,6 +109,9 @@ build: info ${BIN_FILES}
 clean:
 	rm -rf ${DST_DIR}
 	rm -f *.o *.s *.hgfb* *.hggci *.lk *.bc a.out* *hggc* *splitter* *host*
+
+# GIN device API benchmarks; they add themselves to "build" when MPI=1.
+include device_api/gin/gin.mk
 
 TEST_VERIFIABLE_SRCDIR := ../verifiable
 TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/verifiable
