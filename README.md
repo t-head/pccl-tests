@@ -25,6 +25,12 @@ Use `--rebuild` when changing build options to recompile existing objects.
 
 Benchmark executables are generated in `build/`.
 
+MPI builds also include eight independent
+[GIN P2P benchmarks](src/device_api/gin/README.md), following nccl-tests v2.21.1.
+They use exactly two ranks and report latency, bandwidth, and message rate.
+Throughput defaults to four CTAs with one device thread per CTA; latency uses
+one CTA and one thread. Their `-c/-t` options select CTAs/device threads.
+
 For build options, run:
 
 ```shell
@@ -73,8 +79,10 @@ details.
 
 ### Arguments
 
-All benchmark executables share the same common options. Run any benchmark
-with `-h` or `--help` to see the options available in your build.
+The collective benchmark executables share the following common options.
+The independent GIN benchmarks use their own options, documented in their
+[guide](src/device_api/gin/README.md). Run a benchmark with `-h` or `--help`
+to see the options available in your build.
 
 - Number of devices
 
