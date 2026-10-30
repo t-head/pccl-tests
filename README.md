@@ -141,7 +141,12 @@ with `-h` or `--help` to see the options available in your build.
     require PCCL 2.2 or later and symmetric registration (`-R 2`).
     Support varies by benchmark.
   - `-V, --device_cta_count <N>` Number of CTAs for device-side implementations,
-    from `1` to `128`. Default: `16`.
+    from `1` to `128`. Default: `16`. With `-D 2` and no explicit `-V`, the
+    default becomes one CTA per CU (max 128) when the minimum compute capability
+    across ranks is 8.9; this also applies to legacy D2 kernels and to builds
+    without LSA bulk. For eligible shapes, AllToAll additionally requires
+    `deviceCtaCount >= 16` to use the bulk kernel (below that it runs the
+    original kernel); AllReduce bulk routing is independent of `-V`.
 
 - Initialization
 

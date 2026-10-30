@@ -192,6 +192,83 @@ __global__ void IcnAlltoAllKernelOptimized(pcclWindow_t sendwin, size_t sendoffs
   bar.sync(pcclCoopCta(), hggc::memory_order_release);
 }
 
+#ifdef PCCLX_HAS_LSA_BULK
+constexpr int WARP_SIZE = 32;
+constexpr int BULK_UNROLL = 4;
+constexpr int BULK_MIN_CTAS = 16; // Minimum CTAs to overlap remote-store latency.
+constexpr size_t BULK_CHUNK_BYTES = BULK_UNROLL * PCCLX_LSA_BULK_WARP_BYTES;
+
+template <typename T>
+__global__ void IcnAlltoAllBulkKernel(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct pcclDevComm devComm) {
+  pcclLsaBarrierSession<pcclCoopCta> bar { pcclCoopCta(), devComm, pcclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
+  bar.arrive(pcclCoopCta(), hggc::memory_order_relaxed);
+
+  const int rank = devComm.rank, nRanks = devComm.nRanks;
+  T* sendLocal = (T*)pcclGetLocalPointer(sendwin, sendoffset);
+  T* recvLocal = (T*)pcclGetLocalPointer(recvwin, recvoffset);
+  const size_t peerBytes = count * sizeof(T);
+  const int warpsPerBlock = blockDim.x / WARP_SIZE;
+  const int totalWarps = gridDim.x * warpsPerBlock;
+  const bool useBulk = totalWarps >= nRanks &&
+                       reinterpret_cast<uintptr_t>(sendLocal) % 128 == 0 &&
+                       reinterpret_cast<uintptr_t>(recvLocal) % 128 == 0 &&
+                       peerBytes % PCCLX_LSA_BULK_WARP_BYTES == 0;
+
+  if (!useBulk) {
+    bar.wait(pcclCoopCta(), hggc::memory_order_relaxed);
+    int tid = threadIdx.x + blockDim.x * blockIdx.x;
+    int nthreads = blockDim.x * gridDim.x;
+    AlltoAllScalarImpl<T>(sendwin, sendoffset, recvwin, recvoffset, count, rank, nRanks, tid, nthreads);
+    bar.arrive(pcclCoopCta(), hggc::memory_order_release);
+    bar.wait(pcclCoopCta(), hggc::memory_order_relaxed);
+    return;
+  }
+
+  const int warpLinear = blockIdx.x * warpsPerBlock + threadIdx.x / WARP_SIZE;
+  const int peerSlot = warpLinear % nRanks;
+  int dataWarp = warpLinear / nRanks;
+  const int warpsForPeer = (totalWarps - 1 - peerSlot) / nRanks + 1;
+  const int peer = (rank + peerSlot) % nRanks;
+  const size_t bulkBlockCount = peerBytes / PCCLX_LSA_BULK_WARP_BYTES;
+  char* src = (char*)sendLocal + (size_t)peer * peerBytes + (size_t)dataWarp * BULK_CHUNK_BYTES;
+  char* dst = (char*)pcclGetLsaPointer(recvwin, recvoffset, peer) + (size_t)rank * peerBytes + (size_t)dataWarp * BULK_CHUNK_BYTES;
+  int64_t iters = (int64_t)((peerBytes + BULK_CHUNK_BYTES - 1) / BULK_CHUNK_BYTES) - dataWarp;
+
+  uint4 values[BULK_UNROLL];
+  if (iters > 0) {
+#pragma unroll
+    for (int u = 0; u < BULK_UNROLL; u++) {
+      if ((size_t)dataWarp * BULK_UNROLL + u < bulkBlockCount)
+        values[u] = pcclxLsaBulkWarpLoad<PCCLX_LSA_BULK_LD_CG>(src + u * PCCLX_LSA_BULK_WARP_BYTES);
+    }
+  }
+  bar.wait(pcclCoopCta(), hggc::memory_order_relaxed);
+
+  while (iters > 0) {
+#pragma unroll
+    for (int u = 0; u < BULK_UNROLL; u++) {
+      if ((size_t)dataWarp * BULK_UNROLL + u < bulkBlockCount) {
+        if (peer == rank) pcclxLsaBulkWarpStore<PCCLX_LSA_BULK_ST_CG>(dst + u * PCCLX_LSA_BULK_WARP_BYTES, values[u]);
+        else pcclxLsaBulkWarpPeerStore<PCCLX_LSA_BULK_RMT_C, PCCLX_LSA_BULK_RTMD_PA>(dst + u * PCCLX_LSA_BULK_WARP_BYTES, values[u]);
+      }
+    }
+    src += (size_t)warpsForPeer * BULK_CHUNK_BYTES;
+    dst += (size_t)warpsForPeer * BULK_CHUNK_BYTES;
+    dataWarp += warpsForPeer;
+    iters -= warpsForPeer;
+    if (iters > 0) {
+#pragma unroll
+      for (int u = 0; u < BULK_UNROLL; u++) {
+        if ((size_t)dataWarp * BULK_UNROLL + u < bulkBlockCount)
+          values[u] = pcclxLsaBulkWarpLoad<PCCLX_LSA_BULK_LD_CG>(src + u * PCCLX_LSA_BULK_WARP_BYTES);
+      }
+    }
+  }
+  bar.arrive(pcclCoopCta(), hggc::memory_order_release);
+  bar.wait(pcclCoopCta(), hggc::memory_order_relaxed);
+}
+#endif
+
 template <typename T>
 __global__ void GinAlltoAllKernel(pcclWindow_t sendwin, size_t sendoffset, pcclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct pcclDevComm devComm) {
   int ginContext = 0;
@@ -275,6 +352,14 @@ testResult_t AlltoAllRunCollDevice(void* sendwin, size_t sendoffset, void* recvw
                  sendwin, sendoffset, recvwin, recvoffset, count, type, op, root, devComm, stream));
       return testSuccess;
     case 2:
+#ifdef PCCLX_HAS_LSA_BULK
+      if (deviceCtaCount >= BULK_MIN_CTAS && count * wordSize(type) % PCCLX_LSA_BULK_WARP_BYTES == 0 &&
+          sendoffset % 128 == 0 && recvoffset % 128 == 0) {
+        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(IcnAlltoAllBulkKernel, type, op),
+                   sendwin, sendoffset, recvwin, recvoffset, count, type, op, root, devComm, stream));
+        return testSuccess;
+      }
+#endif
       TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(IcnAlltoAllKernelOptimized, type, op),
                  sendwin, sendoffset, recvwin, recvoffset, count, type, op, root, devComm, stream));
       return testSuccess;
