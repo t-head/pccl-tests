@@ -116,6 +116,8 @@ struct testEngine {
   testResult_t (*getDevCommRequirements)(int deviceImpl, pcclDevCommRequirements* reqs, pcclComm_t comm);
   testResult_t (*runCollDevice)(void* sendwin, size_t sendoffset, void* recvwin, size_t recvoffset,
       size_t count, pcclDataType_t type, pcclRedOp_t op, int root, pcclDevComm* devComm, hggcStream_t stream, int deviceImpl);
+  testResult_t (*runCollHostRma)(void* sendwin, size_t sendoffset, void* recvwin, size_t recvoffset,
+      size_t count, pcclDataType_t type, int root, pcclComm_t comm, hggcStream_t stream);
 #endif
 };
 
@@ -283,6 +285,11 @@ static size_t wordSize(pcclDataType_t type) {
     default: return 0;
   }
 }
+
+extern int rmaCtxCount; // number of RMA contexts to provision for host RMA (-H)
+
+#define HOST_RMA_IMPL 10
+#define NUM_RMA_SIG 4
 
 extern int test_pcclVersion; // init'd with pcclGetVersion()
 extern int test_opnum;

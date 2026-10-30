@@ -49,6 +49,49 @@ void GatherGetBw(size_t count, int typesize, double sec, double* algBw, double* 
   *busBw = baseBw * factor;
 }
 
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+testResult_t GatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow, size_t recvoffset,
+                          size_t count, pcclDataType_t type, int root, pcclComm_t comm, hggcStream_t stream) {
+  int rank, nranks;
+  PCCLCHECK(pcclCommUserRank(comm, &rank));
+  PCCLCHECK(pcclCommCount(comm, &nranks));
+
+  pcclWindow_t sendWin = (pcclWindow_t)sendWindow;
+  pcclWindow_t recvWin = (pcclWindow_t)recvWindow;
+
+  void* sendPtr = NULL;
+  void* recvPtr = NULL;
+  PCCLCHECK(pcclWinGetUserPtr(comm, sendWin, &sendPtr));
+  PCCLCHECK(pcclWinGetUserPtr(comm, recvWin, &recvPtr));
+
+  size_t eltSize = wordSize(type);
+  size_t chunkBytes = count * eltSize;
+  const int nctx = rmaCtxCount;
+
+  PCCLCHECK(pcclGroupStart());
+  size_t dstOffset = recvoffset + rank * chunkBytes;
+  PCCLCHECK(pcclPutSignal((char*)sendPtr + sendoffset, count, type, root,
+                    recvWin, dstOffset, rank % NUM_RMA_SIG, (rank + root) % nctx, 0, comm, stream));
+  PCCLCHECK(pcclGroupEnd());
+
+  if (rank == root) {
+    pcclWaitSignalDesc_t* waitDescs = (pcclWaitSignalDesc_t*)malloc(sizeof(pcclWaitSignalDesc_t) * nranks);
+    if (waitDescs == NULL) {
+      return testInternalError;
+    }
+    for (int i = 0; i < nranks; i++) {
+      waitDescs[i].opCnt = 1;
+      waitDescs[i].peer = i;
+      waitDescs[i].sigIdx = i % NUM_RMA_SIG;
+      waitDescs[i].ctx = (i + root) % nctx;
+    }
+    PCCLCHECK(pcclWaitSignal(nranks, waitDescs, comm, stream));
+    free(waitDescs);
+  }
+  return testSuccess;
+}
+#endif
+
 testResult_t GatherRunColl(void* sendbuff, void* recvbuff, size_t count, pcclDataType_t type, pcclRedOp_t op, int root, pcclComm_t comm, hggcStream_t stream) {
   if (count == 0) return testSuccess;
 
@@ -107,6 +150,10 @@ testResult_t GatherRunTest(struct threadArgs* args, int root, pcclDataType_t typ
 struct testEngine gatherEngine = {
   GatherGetBuffSize,
   GatherRunTest
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+  , NULL, NULL,
+  GatherRmaPut
+#endif
 };
 
 #pragma weak pcclTestEngine=gatherEngine

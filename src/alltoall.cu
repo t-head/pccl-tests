@@ -378,6 +378,55 @@ testResult_t AlltoAllRunCollDevice(void* sendwin, size_t sendoffset, void* recvw
 }
 #endif
 
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+testResult_t AlltoAllRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow, size_t recvoffset,
+                            size_t count, pcclDataType_t type, int root, pcclComm_t comm, hggcStream_t stream) {
+  (void)root;
+  int rank, nranks;
+  PCCLCHECK(pcclCommUserRank(comm, &rank));
+  PCCLCHECK(pcclCommCount(comm, &nranks));
+
+  pcclWindow_t sendWin = (pcclWindow_t)sendWindow;
+  pcclWindow_t recvWin = (pcclWindow_t)recvWindow;
+
+  void* sendPtr = NULL;
+  void* recvPtr = NULL;
+  PCCLCHECK(pcclWinGetUserPtr(comm, sendWin, &sendPtr));
+  PCCLCHECK(pcclWinGetUserPtr(comm, recvWin, &recvPtr));
+
+  size_t eltSize = wordSize(type);
+  size_t chunkBytes = count * eltSize;
+  const int nctx = rmaCtxCount;
+
+  pcclWaitSignalDesc_t* waitDescs = (pcclWaitSignalDesc_t*)malloc(sizeof(pcclWaitSignalDesc_t) * nranks);
+  if (waitDescs == NULL) {
+    return testInternalError;
+  }
+
+  for (int i = 0; i < nranks; i++) {
+    waitDescs[i].opCnt = 1;
+    waitDescs[i].peer = i;
+    waitDescs[i].sigIdx = i % NUM_RMA_SIG;
+    waitDescs[i].ctx = (i + rank) % nctx;
+  }
+
+  PCCLCHECK(pcclGroupStart());
+  for (int peer = 0; peer < nranks; peer++) {
+    int targetRank = (rank + peer) % nranks;
+    void* srcPtr = (char*)sendPtr + sendoffset + targetRank * chunkBytes;
+    size_t dstOffset = recvoffset + rank * chunkBytes;
+
+    PCCLCHECK(pcclPutSignal(srcPtr, count, type, targetRank,
+                      recvWin, dstOffset, rank % NUM_RMA_SIG, (rank + targetRank) % nctx, 0, comm, stream));
+  }
+  PCCLCHECK(pcclGroupEnd());
+
+  PCCLCHECK(pcclWaitSignal(nranks, waitDescs, comm, stream));
+  free(waitDescs);
+  return testSuccess;
+}
+#endif
+
 testResult_t AlltoAllRunColl(void* sendbuff, void* recvbuff, size_t count, pcclDataType_t type, pcclRedOp_t op, int root, pcclComm_t comm, hggcStream_t stream) {
   if (count == 0) return testSuccess;
   char* sptr = (char*)sendbuff;
@@ -426,7 +475,8 @@ struct testEngine alltoAllEngine = {
   AlltoAllRunTest,
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
   AlltoAllGetDevCommRequirements,
-  AlltoAllRunCollDevice
+  AlltoAllRunCollDevice,
+  AlltoAllRmaPut
 #endif
 };
 
