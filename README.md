@@ -110,6 +110,8 @@ with `-h` or `--help` to see the options available in your build.
 
   - `-n, --iters <N>` Timed iterations. Default: `20`.
   - `-w, --warmup_iters <N>` Warm-up iterations. Default: `5`.
+  - `-N, --run_cycles <N>` Message-size sweeps per datatype, operation, and
+    root combination. Default: `1`; `0` repeats until interrupted.
   - `-m, --agg_iters <N>` Operations aggregated in each iteration. Default: `1`.
   - `-a, --average <0/1/2/3>` Report rank 0, average, minimum, or maximum time.
     Default: `2`.
