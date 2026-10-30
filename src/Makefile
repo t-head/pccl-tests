@@ -21,6 +21,7 @@ HGGC_MINOR = $(shell echo $(HGGC_VERSION) | cut -d "." -f 2)
 
 HGFLAGS    := -std=c++17 -x hg -Xcompiler -fPIC -DOMPI_SKIP_MPICXX
 
+PCCL_TESTS_GIT_VERSION := $(shell git -C $(PCCL_TESTS_ROOT) describe --always --dirty 2>/dev/null || echo unknown)
 ifneq ($(PCCL_HOME),)
   HGFLAGS += -I$(PCCL_HOME)/include/
   HGLDFLAGS += -L$(PCCL_HOME)/lib -Xlinker -L=$(PCCL_HOME)/lib \
@@ -76,9 +77,21 @@ endif
 HGFLAGS += $(shell echo "$(PPU_OPTION)" | sed "s/;/ /g")
 
 .PHONY: build clean
+.DEFAULT_GOAL := build
 
 BUILDDIR ?= ../build
 DST_DIR := $(BUILDDIR)
+
+# Rebuild the version-printing objects when the git revision changes (GNU make
+# does not track flag changes, so funnel it through a stamp file dependency).
+${DST_DIR}/include/git_version.stamp: FORCE
+	@mkdir -p $(dir $@)
+	@printf '%s' '$(PCCL_TESTS_GIT_VERSION)' > $@.tmp
+	@cmp -s $@.tmp $@ || mv $@.tmp $@
+	@rm -f $@.tmp
+FORCE:
+.PHONY: FORCE
+
 COMMON_SRC_FILES := common.cu barrier.cu
 
 ifeq ($(DISABLE_HGPTI),1)
@@ -105,6 +118,9 @@ build: info ${BIN_FILES}
 clean:
 	rm -rf ${DST_DIR}
 	rm -f *.o *.s *.hgfb* *.hggci *.lk *.bc a.out* *hggc* *splitter* *host*
+
+# GIN device API benchmarks; they add themselves to "build" when MPI=1.
+include device_api/gin/gin.mk
 
 TEST_VERIFIABLE_SRCDIR := ../verifiable
 TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/verifiable
