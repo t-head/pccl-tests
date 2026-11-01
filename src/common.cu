@@ -30,7 +30,6 @@
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
 #pragma weak pcclDevCommCreate
 #pragma weak pcclDevCommDestroy
-#pragma weak pcclCommQueryProperties
 #endif
 
 #ifndef MPI_SUPPORT
@@ -122,9 +121,31 @@ static int average = 2;
 static char* report_check_filename = NULL;
 static bool api_time = false;
 static int deviceImpl = 0;
+static int hostRmaImpl = 0;
+int rmaCtxCount = 1;     // RMA contexts to provision for host RMA (-H); always 1
 int deviceCtaCount = 16;
 static bool deviceCtaCountSet = false;
 static int deviceMpCount = 0;
+
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+static __thread pcclWaitSignalDesc_t* rmaWaitDescs = NULL;
+static __thread int rmaWaitDescsCap = 0;
+
+pcclWaitSignalDesc_t* getRmaWaitDescs(int nDescs) {
+  if (rmaWaitDescsCap < nDescs) {
+    free(rmaWaitDescs);
+    rmaWaitDescs = (pcclWaitSignalDesc_t*)malloc(sizeof(pcclWaitSignalDesc_t) * nDescs);
+    rmaWaitDescsCap = (rmaWaitDescs == NULL) ? 0 : nDescs;
+  }
+  return rmaWaitDescs;
+}
+
+void freeRmaWaitDescs(void) {
+  free(rmaWaitDescs);
+  rmaWaitDescs = NULL;
+  rmaWaitDescsCap = 0;
+}
+#endif
 
 inline void print_header(reportType_t rep_type) {
   const char* timeStr = (elapsed_type == 0) ? " cpu_time " : (elapsed_type == 1) ? "event_time" : "hgpti_time";
@@ -642,6 +663,19 @@ testResult_t startColl(struct threadArgs* args, pcclDataType_t type, pcclRedOp_t
           break;
       }
     }
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+    if (hostRmaImpl) {
+      void* sendwin = args->sendRegHandles ? args->sendRegHandles[i] : NULL;
+      void* recvwin = args->recvRegHandles ? args->recvRegHandles[i] : NULL;
+      HGGCCHECK(hggcSetDevice(args->gpus[i]));
+      TESTCHECK(pcclTestEngine.runCollHostRma(
+            (void*)(in_place ? recvwin : sendwin),
+            shift + (in_place ? args->sendInplaceOffset*rank : 0),
+            (void*)recvwin,
+            shift + (in_place ? args->recvInplaceOffset*rank : 0),
+            realCount, realType, root, args->comms[i], args->streams[i]));
+    } else
+#endif
     if (deviceImpl == 0) {
       TESTCHECK(args->collTest->runColl(
             (void*)(in_place ? recvBuff + args->sendInplaceOffset*rank : sendBuff),
@@ -824,6 +858,8 @@ testResult_t CheckCorrectness(struct threadArgs* args, pcclDataType_t type, pccl
   rep++;
   // Initialize sendbuffs, recvbuffs and expected
   TESTCHECK(args->collTest->initData(args, type, op, root, rep, in_place));
+
+  if (hostRmaImpl) Barrier(args);
 
   if (hggcGraphLaunches >= 1) {
     // Begin hggc graph capture for data check
@@ -1148,9 +1184,18 @@ testResult_t threadRunTests(struct threadArgs* args) {
   // exclusive mode those operations will fail.
   HGGCCHECK(hggcSetDevice(args->gpus[0]));
 
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+  // Provision the descriptors here, before any timed host-RMA call (-w 0 -s 1 skips every earlier one).
+  if (hostRmaImpl && getRmaWaitDescs(args->nProcs*args->nThreads*args->nGpus) == NULL) {
+    return testInternalError;
+  }
+#endif
   if (!init_only) {
     TESTCHECK(pcclTestEngine.runTest(args, pcclroot, (pcclDataType_t)pccltype, test_typenames[pccltype], (pcclRedOp_t)pcclop, test_opnames[pcclop]));
   }
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+  freeRmaWaitDescs();
+#endif
   return testSuccess;
 }
 
@@ -1166,7 +1211,17 @@ testResult_t threadInit(struct threadArgs* args) {
   for (int i=0; i<args->nGpus; i++) {
     int rank = args->proc*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
     HGGCCHECK(hggcSetDevice(args->gpus[i]));
-    PCCLCHECK(pcclCommInitRank(args->comms+i, nranks, args->pcclIds[0], rank));
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+    if (hostRmaImpl) {
+      pcclConfig_t config = PCCL_CONFIG_INITIALIZER;
+      config.numRmaCtx = rmaCtxCount;
+      config.numRmaSig = NUM_RMA_SIG;
+      PCCLCHECK(pcclCommInitRankConfig(args->comms+i, nranks, args->pcclIds[0], rank, &config));
+    } else
+#endif
+    {
+      PCCLCHECK(pcclCommInitRank(args->comms+i, nranks, args->pcclIds[0], rank));
+    }
   }
   PCCLCHECK(pcclGroupEnd());
 
@@ -1194,6 +1249,14 @@ testResult_t threadInit(struct threadArgs* args) {
   }
 
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+  if (hostRmaImpl) {
+    pcclCommProperties_t commProperties = PCCL_COMM_PROPERTIES_INITIALIZER;
+    PCCLCHECK(pcclCommQueryProperties(args->comms[0], &commProperties));
+    if (!commProperties.hostRmaSupport) {
+      fprintf(stderr, "Host RMA is not supported on this system\n");
+      return testInvalidUsage;
+    }
+  }
   if (deviceImpl > 0) {
     pcclDevCommRequirements reqs = PCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     TESTCHECK(pcclTestEngine.getDevCommRequirements(deviceImpl, &reqs, args->comms[0]));
@@ -1302,6 +1365,7 @@ int main(int argc, char* argv[]) {
     {"report_type", required_argument, 0, OPT_REPORT_TYPE},
     {"report_check_filename", required_argument, 0, OPT_REPORT_CHECK_FILENAME},
     {"device_implementation", required_argument, 0, 'D'},
+    {"host_rma_implementation", required_argument, 0, 'H'},
     {"device_cta_count", required_argument, 0, 'V'},
     {"help", no_argument, 0, 'h'},
     {}
@@ -1309,7 +1373,7 @@ int main(int argc, char* argv[]) {
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:p:c:o:d:r:z:T:hG:a:R:x:s:k:D:V:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:p:c:o:d:r:z:T:hG:a:R:x:s:k:D:V:H:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1426,6 +1490,19 @@ int main(int argc, char* argv[]) {
       case 'D':
         deviceImpl = (int)strtol(optarg, NULL, 0);
         break;
+      case 'H': {
+        // PCCL provisions a single RMA context: accept exactly "1", reject malformed or out-of-range values.
+        char* end;
+        errno = 0;
+        long numCtx = strtol(optarg, &end, 0);
+        if (errno == ERANGE || end == optarg || *end != '\0' || numCtx != 1) {
+          fprintf(stderr, "host_rma_implementation must be 1: PCCL supports a single RMA context, got '%s'\n", optarg);
+          exit(EXIT_FAILURE);
+        }
+        hostRmaImpl = 1;
+        rmaCtxCount = (int)numCtx;
+        break;
+      }
       case 'V':
         deviceCtaCount = (int)strtol(optarg, NULL, 0);
         deviceCtaCountSet = true;
@@ -1489,6 +1566,7 @@ int main(int argc, char* argv[]) {
             "[--report_type <0/1/2>] Report detail level \n\t"
             "[--report_check_filename <filename string>] Output file for error reports \n\t"
             "[-D,--device_implementation <impl number>] Enable device implementation (default: 0; requires -R 2 if > 0) \n\t"
+            "[-H,--host_rma_implementation <1>] Enable host one-sided RMA implementations using a single RMA context (default: disable; requires -R 2) \n\t"
             "[-V,--device_cta_count <number>] Set number of CTAs for device implementation (default: 16) \n\t"
             "[-h,--help]\n",
             basename(argv[0]));
@@ -1537,6 +1615,31 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "device implementation (--device_implementation > 0) requires enabling symmetric memory registration (-R 2)\n");
     exit(EXIT_FAILURE);
   }
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+  if (hostRmaImpl) {
+    if (test_pcclVersion < PCCL_VERSION(2,2,0)) {
+      fprintf(stderr, "host RMA (--host_rma_implementation) requires PCCL >= 2.2.0, but is running with %d.\n", test_pcclVersion);
+      exit(EXIT_FAILURE);
+    }
+    if (deviceImpl > 0) {
+      fprintf(stderr, "host RMA (--host_rma_implementation) and device implementation (--device_implementation) are mutually exclusive\n");
+      exit(EXIT_FAILURE);
+    }
+    if (local_register != SYMMETRIC_REGISTER) {
+      fprintf(stderr, "host RMA (--host_rma_implementation) requires enabling symmetric memory registration (-R 2)\n");
+      exit(EXIT_FAILURE);
+    }
+    if (!pcclTestEngine.runCollHostRma) {
+      fprintf(stderr, "host RMA is not supported by this test\n");
+      exit(EXIT_FAILURE);
+    }
+  }
+#else
+  if (hostRmaImpl) {
+    fprintf(stderr, "host RMA (--host_rma_implementation) requires pccl-tests to be compiled against PCCL >= 2.2.0\n");
+    exit(EXIT_FAILURE);
+  }
+#endif
   if (acu_profile) blocking_coll = 1;
 
 #ifdef MPI_SUPPORT
@@ -1716,6 +1819,12 @@ testResult_t run() {
   else config.blocking = 0;
 
   if (ctaPolicy >=0) config.CTAPolicy = ctaPolicy;
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+  if (hostRmaImpl) {
+    config.numRmaCtx = rmaCtxCount;
+    config.numRmaSig = NUM_RMA_SIG;
+  }
+#endif
 
 #ifdef MPI_SUPPORT
   MPI_Allreduce(MPI_IN_PLACE, &minHggcArch, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
@@ -1752,7 +1861,19 @@ testResult_t run() {
   void **recvRegHandles = NULL;
   if (init_type != INIT_PARALLEL) {
     if (pcclProcs == 1) {
-      PCCLCHECK(pcclCommInitAll(comms, nGpus*nThreads, gpus));
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+      if (hostRmaImpl) {
+        PCCLCHECK(pcclGroupStart());
+        for (int i=0; i<nGpus*nThreads; i++) {
+          HGGCCHECK(hggcSetDevice(gpus[i]));
+          PCCLCHECK(pcclCommInitRankConfig(comms+i, pcclProcs*nThreads*nGpus, pcclIds[0], pcclProc*nThreads*nGpus+i, &config));
+        }
+        PCCLCHECK(pcclGroupEnd());
+      } else
+#endif
+      {
+        PCCLCHECK(pcclCommInitAll(comms, nGpus*nThreads, gpus));
+      }
     } else {
       PCCLCHECK(pcclGroupStart());
       for (int i=0; i<nGpus*nThreads; i++) {
@@ -1790,6 +1911,14 @@ testResult_t run() {
     }
 
 #if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+    if (hostRmaImpl) {
+      pcclCommProperties_t commProperties = PCCL_COMM_PROPERTIES_INITIALIZER;
+      PCCLCHECK(pcclCommQueryProperties(comms[0], &commProperties));
+      if (!commProperties.hostRmaSupport) {
+        fprintf(stderr, "Host RMA is not supported on this system\n");
+        return testInvalidUsage;
+      }
+    }
     if (deviceImpl > 0) {
       pcclDevCommRequirements reqs = PCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
       TESTCHECK(pcclTestEngine.getDevCommRequirements(deviceImpl, &reqs, comms[0]));

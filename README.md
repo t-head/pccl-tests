@@ -142,6 +142,12 @@ with `-h` or `--help` to see the options available in your build.
     the standard collective API. Default: `0`. Values greater than `0`
     require PCCL 2.2 or later and symmetric registration (`-R 2`).
     Support varies by benchmark.
+  - `-H, --host_rma_implementation <1>` Use host one-sided RMA
+    (`pcclPutSignal`/`pcclWaitSignal`) instead of the built-in collective.
+    Supported by sendrecv, alltoall, all_gather, broadcast, gather, and
+    scatter. Must be `1`: PCCL supports a single RMA context. Requires PCCL
+    2.2 or later, symmetric registration (`-R 2`), and is mutually exclusive
+    with `-D`.
   - `-V, --device_cta_count <N>` Number of CTAs for device-side implementations,
     from `1` to `128`. Default: `16`. With `-D 2` and no explicit `-V`, the
     default becomes one CTA per CU (max 128) when the minimum compute capability
