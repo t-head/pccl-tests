@@ -9,7 +9,7 @@ Set up the T-Head SAIL SDK environment and set `PCCL_HOME` to the PCCL
 installation directory before building:
 
 ```shell
-export PPU_SDK=/usr/local/PPU_SDK  # or your SDK path
+export PPU_SDK=/usr/local/PPU_SDK  # or your T-Head SAIL SDK path
 source "$PPU_SDK/envsetup.sh"
 export PCCL_HOME=/path/to/pccl-install
 ./build.sh
@@ -24,6 +24,12 @@ Multi-process tests require Open MPI. To build with MPI support:
 Use `--rebuild` when changing build options to recompile existing objects.
 
 Benchmark executables are generated in `build/`.
+
+MPI builds also include eight independent
+[GIN P2P benchmarks](src/device_api/gin/README.md). They use exactly two ranks
+and report latency, bandwidth, and message rate.
+Throughput defaults to four CTAs with one device thread per CTA; latency uses
+one CTA and one thread. Their `-c/-t` options select CTAs/device threads.
 
 For build options, run:
 
@@ -73,8 +79,10 @@ details.
 
 ### Arguments
 
-All benchmark executables share the same common options. Run any benchmark
-with `-h` or `--help` to see the options available in your build.
+The collective benchmark executables share the following common options.
+The independent GIN benchmarks use their own options, documented in their
+[guide](src/device_api/gin/README.md). Run a benchmark with `-h` or `--help`
+to see the options available in your build.
 
 - Number of devices
 
