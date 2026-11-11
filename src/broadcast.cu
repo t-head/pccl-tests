@@ -45,6 +45,38 @@ void BroadcastGetBw(size_t count, int typesize, double sec, double* algBw, doubl
   *busBw = baseBw * factor;
 }
 
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+testResult_t BroadcastRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow, size_t recvoffset,
+                             size_t count, pcclDataType_t type, int root, pcclComm_t comm, hggcStream_t stream) {
+  int rank, nranks;
+  PCCLCHECK(pcclCommUserRank(comm, &rank));
+  PCCLCHECK(pcclCommCount(comm, &nranks));
+
+  pcclWindow_t sendWin = (pcclWindow_t)sendWindow;
+  pcclWindow_t recvWin = (pcclWindow_t)recvWindow;
+
+  void* sendPtr = NULL;
+  void* recvPtr = NULL;
+  PCCLCHECK(pcclWinGetUserPtr(comm, sendWin, &sendPtr));
+  PCCLCHECK(pcclWinGetUserPtr(comm, recvWin, &recvPtr));
+
+  const int nctx = rmaCtxCount;
+
+  PCCLCHECK(pcclGroupStart());
+  if (rank == root) {
+    for (int peer = 0; peer < nranks; peer++) {
+      PCCLCHECK(pcclPutSignal((char*)sendPtr + sendoffset, count, type, peer,
+                        recvWin, recvoffset, peer % NUM_RMA_SIG, (rank + peer) % nctx, 0, comm, stream));
+    }
+  }
+  PCCLCHECK(pcclGroupEnd());
+
+  pcclWaitSignalDesc_t waitDesc = {1, root, rank % NUM_RMA_SIG, (root + rank) % nctx};
+  PCCLCHECK(pcclWaitSignal(1, &waitDesc, comm, stream));
+  return testSuccess;
+}
+#endif
+
 testResult_t BroadcastRunColl(void* sendbuff, void* recvbuff, size_t count, pcclDataType_t type, pcclRedOp_t op, int root, pcclComm_t comm, hggcStream_t stream) {
   int rank;
   PCCLCHECK(pcclCommUserRank(comm, &rank));
@@ -101,6 +133,10 @@ testResult_t BroadcastRunTest(struct threadArgs* args, int root, pcclDataType_t 
 struct testEngine broadcastEngine = {
   BroadcastGetBuffSize,
   BroadcastRunTest
+#if PCCL_VERSION_CODE >= PCCL_VERSION(2,2,0)
+  , NULL, NULL,
+  BroadcastRmaPut
+#endif
 };
 
 #pragma weak pcclTestEngine=broadcastEngine
