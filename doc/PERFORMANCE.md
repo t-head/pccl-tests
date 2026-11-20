@@ -42,6 +42,20 @@ HGPTI Time provides fine-grained, hardware-level performance tracing using the H
 - **How it works**: Uses `hgptiBegin()` and `hgptiEnd()` to capture kernel execution time at the hardware level. HGPTI flushes trace data and aggregates timing information across all PPU devices and iterations.
 - **Controlled by**: `--elapsed_type=2`
 - **Use case**: Provides the most detailed and accurate hardware timing information, suitable for deep performance analysis and kernel-level optimization. Requires HGPTI support and is typically used for profiling and debugging performance bottlenecks at the kernel level.
+- **Limitation**: Host RMA (`-H 1`) does not support this mode because kernel activity does not cover CE copies, stream memory operations, or CPU proxy work. The combination is rejected before initialization; use CPU timing (`--elapsed_type=0`) or HGGC event timing (`--elapsed_type=1`) instead.
+
+## Host RMA graph size limit
+
+Host RMA (`-H 1`) with graph replay (`-G > 0`) temporarily rejects an actual
+single public Put strictly larger than 1073741824 bytes (1 GiB), before that
+message size enters capture or measurement. Exactly 1 GiB is allowed. The
+check uses the existing datatype and collective count rounding, not the total
+buffer size: a two-rank alltoall message of 2 GiB has 1 GiB public Puts and is
+allowed. It is a conservative test-side guard for a CE graph limitation and
+also applies to potentially proxy-routed calls. Smaller graph calls and
+large non-graph calls (`-G 0`) remain available. Initialization and existing
+non-graph warm-ups are unchanged; see the [README](../README.md#host-rma-prerequisites-and-diagnostics)
+for details.
 
 # Bandwidth
 
