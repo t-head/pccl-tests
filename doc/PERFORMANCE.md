@@ -42,6 +42,7 @@ HGPTI Time provides fine-grained, hardware-level performance tracing using the H
 - **How it works**: Uses `hgptiBegin()` and `hgptiEnd()` to capture kernel execution time at the hardware level. HGPTI flushes trace data and aggregates timing information across all PPU devices and iterations.
 - **Controlled by**: `--elapsed_type=2`
 - **Use case**: Provides the most detailed and accurate hardware timing information, suitable for deep performance analysis and kernel-level optimization. Requires HGPTI support and is typically used for profiling and debugging performance bottlenecks at the kernel level.
+- **Limitation**: Host RMA (`-H 1`) does not support this mode because kernel activity does not cover CE copies, stream memory operations, or CPU proxy work. The combination is rejected before initialization; use CPU timing (`--elapsed_type=0`) or HGGC event timing (`--elapsed_type=1`) instead.
 
 # Bandwidth
 
