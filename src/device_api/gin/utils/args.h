@@ -29,6 +29,12 @@ typedef enum {
 } pcclGinOp_t;
 
 typedef enum {
+  pcclTestSignalUnset = 0,
+  pcclTestSignalInc,
+  pcclTestSignalSet,
+} pcclTestSignalType_t;
+
+typedef enum {
   pcclGinMemoryDevice = 0,
   pcclGinMemoryHost,
 } pcclGinMemoryType_t;
@@ -52,6 +58,8 @@ typedef struct {
   pcclGinMemoryType_t localMemoryType;
   pcclGinMemoryType_t remoteMemoryType;
   int queueDepth;
+  bool queueDepthSet;  // An explicit --gin_tx_depth overrides provider-selected queue sizing.
+  pcclTestSignalType_t signalType;
   pcclGinRsm_t ginRsm;
   pcclGinOp_t ginOp;
 } ginArgs_t;

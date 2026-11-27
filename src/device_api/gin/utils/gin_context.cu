@@ -116,11 +116,28 @@ void pcclTestGinDevCommCreate(pcclComm_t comm, const ginArgs_t* args, ginContext
   const int windowFlags = PCCL_WIN_DEFAULT;
 
   pcclDevCommRequirements_t reqs = PCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  pcclCommProperties_t props = PCCL_COMM_PROPERTIES_INITIALIZER;
+  PCCLCHECK_FATAL(pcclCommQueryProperties(comm, &props));
+#if defined(PCCLX_GIN_TROCE_ENABLE) && !PCCLX_GIN_TROCE_ENABLE
+  if (props.ginType == PCCLX_GIN_TYPE_TROCE) {
+    fprintf(stderr, "Error: native TROCE was disabled when building this benchmark\n");
+    MPI_Abort(MPI_COMM_WORLD, 1);
+  }
+#endif
+#if PCCL_TEST_GIN_HAS_SIGNAL_SET
+  if (args->signalType == pcclTestSignalSet && props.ginType != PCCLX_GIN_TYPE_TROCE &&
+      props.ginType != PCCL_GIN_TYPE_PROXY) {
+    fprintf(stderr, "Error: GIN backend %d does not support signal type set\n", (int)props.ginType);
+    MPI_Abort(MPI_COMM_WORLD, 1);
+  }
+#endif
   reqs.ginContextCount = args->numCtas;
-  reqs.ginQueueDepth = args->queueDepth;
+  // Allow PROXY to size its queue unless the user explicitly requests a depth.
+  reqs.ginQueueDepth = props.ginType == PCCL_GIN_TYPE_PROXY && !args->queueDepthSet ? 0 : args->queueDepth;
   reqs.ginConnectionType = PCCL_GIN_CONNECTION_FULL;
-  reqs.ginSignalCount = 1;
-  reqs.ginCounterCount = 1;
+  // Signals are indexed within each CTA's context. SET needs one slot per writer.
+  reqs.ginSignalCount = args->signalType == pcclTestSignalSet ? args->numThreads : 1;
+  reqs.ginCounterCount = args->ginOp == pcclGinOpPutCount ? 1 : 0;
   PCCLCHECK_FATAL(pcclDevCommCreate(comm, &reqs, &ctx->dcomm));
   if (ctx->dcomm.ginContextCount < (uint32_t)args->numCtas) {
     fprintf(stderr, "Error: PCCL granted %u GIN contexts, but this benchmark requires %d CTAs/contexts.\n",

@@ -11,6 +11,13 @@
 #include "pccl_device.h"
 #include "args.h"
 
+// Extension headers declare SignalSet for PROXY even when native TROCE is disabled.
+#if defined(PCCLX_GIN_TROCE_ENABLE)
+#define PCCL_TEST_GIN_HAS_SIGNAL_SET 1
+#else
+#define PCCL_TEST_GIN_HAS_SIGNAL_SET 0
+#endif
+
 typedef struct {
   pcclDevComm dcomm;
   void* devBuf;

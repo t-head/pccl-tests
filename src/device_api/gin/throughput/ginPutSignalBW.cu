@@ -12,7 +12,7 @@
 #include "gin_context.h"
 
 template <bool skipCreditCheck, bool aggregateRequests, bool strongSignal,
-          pcclGinResourceSharingMode rsm>
+          pcclGinResourceSharingMode rsm, bool setSignal = false>
 __global__ void ginPutSignalBwKernel(pcclDevComm comm, pcclWindow_t devWindow, int iters, size_t numElems,
                                        int queueDepth, int wqesPerOp, size_t maxElems) {
   const int tag = blockIdx.x;
@@ -33,24 +33,22 @@ __global__ void ginPutSignalBwKernel(pcclDevComm comm, pcclWindow_t devWindow, i
   const int wqesPerIter = blockDim.x * wqesPerOp;
   const int flushEvery = (queueDepth / 2) / wqesPerIter < 1 ? 1 : (queueDepth / 2) / wqesPerIter;
 
-  constexpr pcclGinSignal_t signalId = 0;
+  const pcclGinSignal_t signalId = setSignal ? threadIdx.x : 0;
 
   for (int i = 0; i < iters; i++) {
-    /* PCCL does not yet distinguish weak/strong signal actions. */
-    (void)strongSignal;
     if constexpr (aggregateRequests) {
       if (threadIdx.x != lastActive) {
-        gin.put(team, peer, dbuf, sbuf, numElems, pcclGin_SignalInc{signalId}, pcclGin_None{}, pcclCoopThread{},
+        gin.put(team, peer, dbuf, sbuf, numElems, ginSignalAction<setSignal>(signalId, i), pcclGin_None{}, pcclCoopThread{},
                 pcclGin_None{}, hggc::thread_scope_thread, hggc::thread_scope_thread,
                 optFlags | pcclGinOptFlagsAggregateRequests);
       }
       __syncthreads();
       if (threadIdx.x == lastActive) {
-        gin.put(team, peer, dbuf, sbuf, numElems, pcclGin_SignalInc{signalId}, pcclGin_None{}, pcclCoopThread{},
+        gin.put(team, peer, dbuf, sbuf, numElems, ginSignalAction<setSignal>(signalId, i), pcclGin_None{}, pcclCoopThread{},
                 pcclGin_None{}, hggc::thread_scope_thread, hggc::thread_scope_thread, optFlags);
       }
     } else {
-      gin.put(team, peer, dbuf, sbuf, numElems, pcclGin_SignalInc{signalId}, pcclGin_None{}, pcclCoopThread{},
+      gin.put(team, peer, dbuf, sbuf, numElems, ginSignalAction<setSignal>(signalId, i), pcclGin_None{}, pcclCoopThread{},
               pcclGin_None{}, hggc::thread_scope_thread, hggc::thread_scope_thread, optFlags);
     }
     if constexpr (skipCreditCheck) {
@@ -62,14 +60,14 @@ __global__ void ginPutSignalBwKernel(pcclDevComm comm, pcclWindow_t devWindow, i
   gin.flush(pcclCoopCta{});
 }
 
-template <pcclGinResourceSharingMode rsm>
+template <pcclGinResourceSharingMode rsm, bool setSignal>
 static void ginPutSignalBWLaunchRsm(const ginContext_t* ctx, hggcStream_t stream,
                                      const ginArgs_t* args, size_t numElems, int iters) {
   const int queueDepth = args->queueDepth;
   const int wqesPerOp = pcclTestGinWqesPerOp(numElems * sizeof(int), pcclGinOpPutSignal);
   const size_t maxElems = args->maxBytes / sizeof(int);
 #define LAUNCH_BW_PUT_SIGNAL(SKIP, AG, STRONG) \
-  ginPutSignalBwKernel<SKIP, AG, STRONG, rsm><<<args->numCtas, args->numThreads, 0, stream>>>(ctx->dcomm, ctx->devBufWindow, iters, numElems, queueDepth, wqesPerOp, maxElems)
+  ginPutSignalBwKernel<SKIP, AG, STRONG, rsm, setSignal><<<args->numCtas, args->numThreads, 0, stream>>>(ctx->dcomm, ctx->devBufWindow, iters, numElems, queueDepth, wqesPerOp, maxElems)
 
   if (args->ginSkipCreditCheck) {
     if (args->ginAggregateRequests) {
@@ -94,9 +92,11 @@ static void ginPutSignalBWLaunchRsm(const ginContext_t* ctx, hggcStream_t stream
 }
 
 void pcclTestGinPutSignalBWLaunch(const ginContext_t* ctx, hggcStream_t stream, const ginArgs_t* args, size_t numElems, int iters) {
-  if (args->ginRsm == pcclGinRsmCta) {
-    ginPutSignalBWLaunchRsm<PCCL_GIN_RESOURCE_SHARING_CTA>(ctx, stream, args, numElems, iters);
-  } else {
-    ginPutSignalBWLaunchRsm<PCCL_GIN_RESOURCE_SHARING_GPU>(ctx, stream, args, numElems, iters);
-  }
+  pcclTestGinDispatchSignal(args->signalType, [&](auto setSignal) {
+    if (args->ginRsm == pcclGinRsmCta) {
+      ginPutSignalBWLaunchRsm<PCCL_GIN_RESOURCE_SHARING_CTA, decltype(setSignal)::value>(ctx, stream, args, numElems, iters);
+    } else {
+      ginPutSignalBWLaunchRsm<PCCL_GIN_RESOURCE_SHARING_GPU, decltype(setSignal)::value>(ctx, stream, args, numElems, iters);
+    }
+  });
 }

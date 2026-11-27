@@ -81,7 +81,8 @@ details.
 
 The collective benchmark executables share the following common options.
 The independent GIN benchmarks use their own options, documented in their
-[guide](src/device_api/gin/README.md). Run a benchmark with `-h` or `--help`
+[guide](src/device_api/gin/README.md). SIGNAL and PUT_SIGNAL accept
+`--gin_signal_type inc|set` (default `inc`). Run a benchmark with `-h` or `--help`
 to see the options available in your build.
 
 - Number of devices

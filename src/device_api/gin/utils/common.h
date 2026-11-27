@@ -24,6 +24,26 @@
 
 #if PCCL_CHECK_HGGCCC
 
+// A high word and a non-unit step distinguish absolute publication from increment.
+__host__ __device__ inline uint64_t ginSetValue(int iteration) {
+  return 0x1234567800000000ULL + 17ULL * (static_cast<uint64_t>(iteration) + 1);
+}
+
+template <typename Launch>
+inline void pcclTestGinDispatchSignal(pcclTestSignalType_t type, Launch launch) {
+  if (type == pcclTestSignalSet) launch(std::true_type{});
+  else launch(std::false_type{});
+}
+
+template <bool setSignal>
+PCCL_DEVICE_INLINE auto ginSignalAction(pcclGinSignal_t id, int iteration) {
+#if PCCL_TEST_GIN_HAS_SIGNAL_SET
+  if constexpr (setSignal) return pcclxGin_SignalSet{id, ginSetValue(iteration)};
+  else
+#endif
+    return pcclGin_SignalInc{id};
+}
+
 PCCL_DEVICE_INLINE void ginGetDevice(pcclGin& gin, pcclTeam team, int peer, pcclWindow_t remoteWnd,
                                      size_t remoteOffset, pcclWindow_t localWnd, size_t localOffset, size_t bytes,
                                      pcclCoopThread coop, pcclGin_None descriptor, uint32_t optFlags) {

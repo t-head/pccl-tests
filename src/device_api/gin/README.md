@@ -45,6 +45,8 @@ otherwise it omits them and keeps the existing tests.
 | `ginSignalBW_perf` | Signal message rate; no payload, so bandwidth is zero |
 
 The PUT-family selection uses `--gin_op put`, `put_signal`, or `put_counter`.
+Only `put_counter` requests a local GIN counter. PUT, GET, and signal
+benchmarks can run on a backend that provides no local counters.
 The ping-pong PUT benchmark accepts only `put` and `put_signal`: a local
 completion counter cannot tell the remote rank to start its return operation.
 
@@ -78,8 +80,10 @@ even when CTA sharing is requested; the configuration line reports
 
 ### `--gin_tx_depth <depth>`
 
-Sets `pcclDevCommRequirements.ginQueueDepth` when the device communicator is
-created. The accepted range is 1 through 32768; the default is 1024.
+An explicit depth sets `pcclDevCommRequirements.ginQueueDepth` when creating
+the device communicator. The accepted range is 1 through 32768. The kernel
+uses a default budget of 1024. With no explicit depth, PROXY chooses its own
+queue size and other backends receive the default budget.
 
 For GDAKI this is the requested send-queue budget. A payload may be split into
 1 GiB chunks, so one logical operation can consume multiple WQEs; PUT_SIGNAL
@@ -130,11 +134,22 @@ ping-pong variants reject host memory rather than silently changing behavior.
 
 ### Other operation options
 
-- `--gin_strong_signal` is accepted only by signal and PUT_SIGNAL benchmarks.
-  Both selections currently use PCCL's existing strong `pcclGin_SignalInc`, so
-  they are not separate weak/strong performance paths.
+- `--gin_strong_signal` remains a compatibility option on signal benchmarks.
+  The selected action is the same with or without this flag.
 - `--gin_bd` makes both ranks run throughput kernels and reports the sum of the
   two independently measured rates.
+- `--gin_signal_type inc|set` selects the action for SIGNAL and PUT_SIGNAL.
+  The default `inc` increments slot 0 in each context. `set` writes an absolute
+  64-bit value. Each thread writes its own slot in its CTA's context. Iteration
+  `i` (starting at zero) publishes `0x1234567800000000 + 17 * (i + 1)`.
+  For both actions the ranks reset their slots before each phase. After warm-up
+  and timing, every receiver waits for the expected value in each active slot.
+  INC must reach iterations times writers per context. A slot that stays
+  incorrect for 10 seconds after the senders finish aborts the run. Results
+  print after all receivers pass. Checks and slot resets run outside event timing. SET requires
+  headers with the PCCL signal-set extension and a supporting provider. PROXY
+  checks a SET on each active context before timing, since provider support
+  can vary.
 
 ## Sizes, timing, and output
 
@@ -166,10 +181,6 @@ PUT_COUNTER throughput waits for every requested local counter increment before
 resetting the counter. Credit-skipping checkpoints also wait for the cumulative
 counter value, so counter completion remains inside the measured interval.
 
-The validated backends are selected with `PCCL_GIN_TYPE=3` (GDAKI) and
-`PCCL_GIN_TYPE=2` (PROXY). PROXY runs need a PCCL whose PROXY backend accepts a
-nonzero GIN queue depth, as added by
-[t-head/pccl#130](https://github.com/t-head/pccl/pull/130); otherwise the
-device communicator cannot be created. Increasing `-c` uses multiple contexts
-and peer QPs; physical network-port distribution remains a property of the
-selected PCCL library and topology, not of the benchmark alone.
+Throughput uses one GIN context per CTA. `-c 2` uses contexts 0 and 1.
+Single-CTA latency uses context 0. When measuring more than one network
+interface, check the selected devices and their traffic counters for the run.

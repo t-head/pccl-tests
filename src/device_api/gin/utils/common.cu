@@ -7,7 +7,7 @@
  ************************************************************************/
 #include "common.h"
 #include "gin_context.h"
-
+#include <sched.h>
 
 /*
  * A binary can cover several operations (the put benchmarks select between put,
@@ -15,10 +15,21 @@
  * before the table.
  */
 static void printConfiguration(const ginArgs_t* args, const ginBenchmark_t* bench, const ginContext_t* ctx) {
-  const bool gdaki = ctx->dcomm.ginNetDeviceTypes[0] == PCCL_NET_DEVICE_GIN_GDAKI;
+  const auto type = ctx->dcomm.ginNetDeviceTypes[0];
+  const char* backend;
+  switch (type) {
+    case PCCL_NET_DEVICE_GIN_GDAKI: backend = "GDAKI"; break;
+    case PCCL_NET_DEVICE_GIN_PROXY: backend = "PROXY"; break;
+#if defined(PCCLX_GIN_TROCE_ENABLE) && PCCLX_GIN_TROCE_ENABLE
+    case PCCLX_NET_DEVICE_GIN_TROCE: backend = "TROCE"; break;
+#endif
+    default: backend = "unknown"; break;
+  }
   printf("# %s: backend=%s, rsm=%s", bench->name ? bench->name : "gin benchmark",
-         gdaki ? "GDAKI" : "PROXY", pcclTestGinRsmName(args->ginRsm));
-  if (gdaki && args->ginRsm == pcclGinRsmCta && bench->name && strstr(bench->name, "GIN GET"))
+         backend, pcclTestGinRsmName(args->ginRsm));
+  if (args->signalType != pcclTestSignalUnset)
+    printf(", signal_type=%s", args->signalType == pcclTestSignalSet ? "set" : "inc");
+  if (type == PCCL_NET_DEVICE_GIN_GDAKI && args->ginRsm == pcclGinRsmCta && bench->name && strstr(bench->name, "GIN GET"))
     printf(", get_backend_rsm=gpu");
   if (args->ginStrongSignal) printf(", strong_signal");
   if (args->ginSkipCreditCheck) printf(", skip_credit_check");
@@ -88,6 +99,17 @@ static double throughputBytesPerMessage(const ginBenchmark_t* bench, size_t size
   }
 }
 
+static constexpr double signalTimeoutSeconds = 10.0;
+
+#if PCCL_TEST_GIN_HAS_SIGNAL_SET
+static void checkProxySet(pcclComm_t comm, const ginContext_t* ctx, int contexts, hggcStream_t stream);
+#endif
+static void prepareSignals(const ginContext_t* ctx, int contexts, int slots, hggcStream_t stream);
+static void waitForSignalSlots(const ginContext_t* ctx, hggcStream_t stream, int contexts, int slots,
+                               uint64_t expected, int* mismatch, const char* phase);
+static void completeSignalPhase(const ginContext_t* ctx, hggcStream_t stream, int slots, int* mismatch,
+                                const ginArgs_t* args, int iters, int rank, size_t size, bool measured);
+
 void pcclTestGinPerfRun(int argc, char** argv, const ginArgs_t* args, const ginBenchmark_t* bench) {
 
   setlinebuf(stdout);
@@ -137,6 +159,19 @@ void pcclTestGinPerfRun(int argc, char** argv, const ginArgs_t* args, const ginB
   const bool participates = (bench->type == GIN_BENCHMARK_TYPE_PING_PONG || bidir) || rank == 0;
   const int timingRank = bench->type == GIN_BENCHMARK_TYPE_PING_PONG ? 1 : 0;
   const bool measures = (rank == timingRank) || bidir;
+  const bool signalsInUse = args->signalType != pcclTestSignalUnset;
+  const int slots = args->signalType == pcclTestSignalSet ? args->numThreads : 1;
+  const bool checkReceiver = signalsInUse && (rank == 1 || bidir || bench->type == GIN_BENCHMARK_TYPE_PING_PONG);
+  int* mismatch = nullptr;
+  if (signalsInUse) HGGCCHECK_FATAL(hggcMalloc((void**)&mismatch, sizeof(int)));
+#if PCCL_TEST_GIN_HAS_SIGNAL_SET
+  if (args->signalType == pcclTestSignalSet && ctx.dcomm.ginNetDeviceTypes[0] == PCCL_NET_DEVICE_GIN_PROXY) {
+    prepareSignals(&ctx, args->numCtas, 1, stream);
+    checkProxySet(comm, &ctx, args->numCtas, stream);
+    waitForSignalSlots(&ctx, stream, args->numCtas, 1, 1, mismatch, "PROXY SET probe");
+    MPICHECK_FATAL(MPI_Barrier(MPI_COMM_WORLD));
+  }
+#endif
 
   hggcEvent_t start, stop;
   if (measures) {
@@ -153,18 +188,30 @@ void pcclTestGinPerfRun(int argc, char** argv, const ginArgs_t* args, const ginB
     size_t numElems = size / sizeof(int);
 
     //-----Warmup-----
+    if (signalsInUse && args->warmupIters > 0) prepareSignals(&ctx, args->numCtas, slots, stream);
     if (args->warmupIters > 0 && participates) {
       bench->run(&ctx, stream, args, numElems, args->warmupIters);
       HGGCCHECK_FATAL(hggcStreamSynchronize(stream));
     }
 
+    // Sender-side flush may complete before the signal is visible on its receiver.
+    if (signalsInUse && args->warmupIters > 0)
+      completeSignalPhase(&ctx, stream, slots, checkReceiver ? mismatch : nullptr,
+                          args, args->warmupIters, rank, size, false);
+    else if (!signalsInUse)
+      MPICHECK_FATAL(MPI_Barrier(MPI_COMM_WORLD));
+
     //-----Benchmark-----
-    MPICHECK_FATAL(MPI_Barrier(MPI_COMM_WORLD));
+    if (signalsInUse) prepareSignals(&ctx, args->numCtas, slots, stream);
 
     if (measures) HGGCCHECK_FATAL(hggcEventRecord(start, stream));
     if (participates) bench->run(&ctx, stream, args, numElems, args->iters);
     if (measures) HGGCCHECK_FATAL(hggcEventRecord(stop, stream));
     if (participates) HGGCCHECK_FATAL(hggcStreamSynchronize(stream));
+
+    if (signalsInUse)
+      completeSignalPhase(&ctx, stream, slots, checkReceiver ? mismatch : nullptr,
+                          args, args->iters, rank, size, true);
 
     if (bench->type == GIN_BENCHMARK_TYPE_PING || bench->type == GIN_BENCHMARK_TYPE_PING_PONG) {
       // Latency: rank 0 reports (bidirectional is not supported for latency).
@@ -211,6 +258,7 @@ void pcclTestGinPerfRun(int argc, char** argv, const ginArgs_t* args, const ginB
 
   MPICHECK_FATAL(MPI_Barrier(MPI_COMM_WORLD));
   pcclTestGinDevCommDestroy(comm, &ctx);
+  if (mismatch) HGGCCHECK_FATAL(hggcFree(mismatch));
   PCCLCHECK_FATAL(pcclCommDestroy(comm));
   if (measures) {
     HGGCCHECK_FATAL(hggcEventDestroy(start));
@@ -218,4 +266,97 @@ void pcclTestGinPerfRun(int argc, char** argv, const ginArgs_t* args, const ginB
   }
   HGGCCHECK_FATAL(hggcStreamDestroy(stream));
   MPICHECK_FATAL(MPI_Finalize());
+}
+
+#if PCCL_TEST_GIN_HAS_SIGNAL_SET
+static __global__ void probeProxySet(pcclDevComm comm) {
+  pcclGin gin(comm, blockIdx.x);
+  gin.signal(pcclTeamWorld(comm), comm.rank ^ 1, pcclxGin_SignalSet{0, 1});
+  gin.flush(pcclCoopThread{});
+}
+
+// PROXY does not advertise the underlying provider's signal operations. Surface
+// its asynchronous rejection before entering a timed kernel or a polling wait.
+static void checkProxySet(pcclComm_t comm, const ginContext_t* ctx, int contexts, hggcStream_t stream) {
+  probeProxySet<<<contexts, 1, 0, stream>>>(ctx->dcomm);
+  HGGCCHECK_FATAL(hggcGetLastError());
+  const double deadline = MPI_Wtime() + signalTimeoutSeconds;
+  hggcError_t status;
+  do {
+    status = hggcStreamQuery(stream);
+    pcclResult_t result;
+    PCCLCHECK_FATAL(pcclCommGetAsyncError(comm, &result));
+    if (result != pcclSuccess) {
+      fprintf(stderr, "Error: the GIN PROXY provider failed the SET probe: %s\n", pcclGetErrorString(result));
+      MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    if (status == hggcErrorNotReady) {
+      if (MPI_Wtime() >= deadline) {
+        fprintf(stderr, "Error: timed out submitting the GIN PROXY SET probe\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+      }
+      sched_yield();
+    }
+  } while (status == hggcErrorNotReady);
+  HGGCCHECK_FATAL(status);
+  MPICHECK_FATAL(MPI_Barrier(MPI_COMM_WORLD));
+}
+#endif
+
+// Mirror the measured launch: blockIdx.x selects the context, threadIdx.x the signal.
+static __global__ void resetSignalSlots(pcclDevComm comm) {
+  pcclGin gin(comm, blockIdx.x);
+  gin.resetSignal(threadIdx.x);
+}
+
+static __global__ void verifySignalSlots(pcclDevComm comm, uint64_t expected, int* mismatch, bool diagnose) {
+  pcclGin gin(comm, blockIdx.x);
+  uint64_t value = gin.readSignal(threadIdx.x);
+  if (value != expected && atomicCAS(mismatch, 0, 1) == 0 && diagnose) {
+    printf("Signal mismatch: rank=%d context=%u slot=%u expected=%llu observed=%llu\n",
+           comm.rank, blockIdx.x, threadIdx.x, (unsigned long long)expected, (unsigned long long)value);
+  }
+}
+
+static void prepareSignals(const ginContext_t* ctx, int contexts, int slots, hggcStream_t stream) {
+  resetSignalSlots<<<contexts, slots, 0, stream>>>(ctx->dcomm);
+  HGGCCHECK_FATAL(hggcGetLastError());
+  HGGCCHECK_FATAL(hggcStreamSynchronize(stream));
+  MPICHECK_FATAL(MPI_Barrier(MPI_COMM_WORLD));
+}
+
+static void waitForSignalSlots(const ginContext_t* ctx, hggcStream_t stream, int contexts, int slots,
+                               uint64_t expected, int* mismatch, const char* phase) {
+  const double deadline = MPI_Wtime() + signalTimeoutSeconds;
+  for (;;) {
+    const bool expired = MPI_Wtime() >= deadline;
+    HGGCCHECK_FATAL(hggcMemsetAsync(mismatch, 0, sizeof(int), stream));
+    verifySignalSlots<<<contexts, slots, 0, stream>>>(ctx->dcomm, expected, mismatch, expired);
+    HGGCCHECK_FATAL(hggcGetLastError());
+    HGGCCHECK_FATAL(hggcStreamSynchronize(stream));
+    int failed;
+    HGGCCHECK_FATAL(hggcMemcpy(&failed, mismatch, sizeof(failed), hggcMemcpyDeviceToHost));
+    if (!failed) return;
+    if (expired) {
+      fprintf(stderr, "Error: timed out waiting for %s signals on rank %d\n", phase, ctx->dcomm.rank);
+      MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    sched_yield();
+  }
+}
+
+static void completeSignalPhase(const ginContext_t* ctx, hggcStream_t stream, int slots, int* mismatch,
+                                const ginArgs_t* args, int iters, int rank, size_t size, bool measured) {
+  // Start the visibility deadline only after all senders finish this phase.
+  MPICHECK_FATAL(MPI_Barrier(MPI_COMM_WORLD));
+  if (mismatch) {
+    const bool setSignal = args->signalType == pcclTestSignalSet;
+    const uint64_t expected = setSignal ? ginSetValue(iters - 1) : (uint64_t)iters * args->numThreads;
+    waitForSignalSlots(ctx, stream, args->numCtas, slots, expected, mismatch, measured ? "measured" : "warm-up");
+    if (measured)
+      printf("# %s verified: rank=%d bytes=%zu contexts=%d slots_per_context=%d value=0x%llx\n",
+             setSignal ? "SET" : "INC", rank, size, args->numCtas, slots, (unsigned long long)expected);
+  }
+  // All receivers must finish before a rank resets a slot or reports a measurement.
+  MPICHECK_FATAL(MPI_Barrier(MPI_COMM_WORLD));
 }

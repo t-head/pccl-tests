@@ -11,7 +11,7 @@
 #include "args.h"
 #include "gin_context.h"
 
-template <bool skipCreditCheck, bool strongSignal, pcclGinResourceSharingMode rsm>
+template <bool skipCreditCheck, bool strongSignal, pcclGinResourceSharingMode rsm, bool setSignal = false>
 __global__ void ginPutSignalPingKernel(pcclDevComm comm, pcclWindow_t devWindow, size_t numElems, int iters) {
   pcclTeam team = pcclTeamWorld(comm);
   pcclGin gin(comm, 0, rsm);
@@ -25,19 +25,17 @@ __global__ void ginPutSignalPingKernel(pcclDevComm comm, pcclWindow_t devWindow,
   constexpr pcclGinSignal_t signalId = 0;
 
   for (int i = 0; i < iters; i++) {
-    /* PCCL does not yet distinguish weak/strong signal actions. */
-    (void)strongSignal;
-    gin.put(team, 1, dbuf, sbuf, numElems, pcclGin_SignalInc{signalId}, pcclGin_None{}, pcclCoopThread{},
+    gin.put(team, 1, dbuf, sbuf, numElems, ginSignalAction<setSignal>(signalId, i), pcclGin_None{}, pcclCoopThread{},
             pcclGin_None{}, hggc::thread_scope_thread, hggc::thread_scope_thread, optFlags);
     gin.flush(pcclCoopThread{});
   }
 }
 
-template <pcclGinResourceSharingMode rsm>
+template <pcclGinResourceSharingMode rsm, bool setSignal>
 static void ginPutSignalLatencyPingLaunchRsm(const ginContext_t* ctx, hggcStream_t stream,
                                               const ginArgs_t* args, size_t numElems, int iters) {
 #define LAUNCH_PING_PUT_SIGNAL(SKIP, STRONG) \
-  ginPutSignalPingKernel<SKIP, STRONG, rsm><<<1, 1, 0, stream>>>(ctx->dcomm, ctx->devBufWindow, numElems, iters)
+  ginPutSignalPingKernel<SKIP, STRONG, rsm, setSignal><<<1, 1, 0, stream>>>(ctx->dcomm, ctx->devBufWindow, numElems, iters)
 
   if (args->ginSkipCreditCheck) {
     if (args->ginStrongSignal) LAUNCH_PING_PUT_SIGNAL(true, true);
@@ -52,9 +50,11 @@ static void ginPutSignalLatencyPingLaunchRsm(const ginContext_t* ctx, hggcStream
 }
 
 void pcclTestGinPutSignalLatencyPingLaunch(const ginContext_t* ctx, hggcStream_t stream, const ginArgs_t* args, size_t numElems, int iters) {
-  if (args->ginRsm == pcclGinRsmCta) {
-    ginPutSignalLatencyPingLaunchRsm<PCCL_GIN_RESOURCE_SHARING_CTA>(ctx, stream, args, numElems, iters);
-  } else {
-    ginPutSignalLatencyPingLaunchRsm<PCCL_GIN_RESOURCE_SHARING_GPU>(ctx, stream, args, numElems, iters);
-  }
+  pcclTestGinDispatchSignal(args->signalType, [&](auto setSignal) {
+    if (args->ginRsm == pcclGinRsmCta) {
+      ginPutSignalLatencyPingLaunchRsm<PCCL_GIN_RESOURCE_SHARING_CTA, decltype(setSignal)::value>(ctx, stream, args, numElems, iters);
+    } else {
+      ginPutSignalLatencyPingLaunchRsm<PCCL_GIN_RESOURCE_SHARING_GPU, decltype(setSignal)::value>(ctx, stream, args, numElems, iters);
+    }
+  });
 }
