@@ -108,10 +108,31 @@ jobs:
         with:
           fetch-depth: 0
           path: pccl-tests
+      # The library under test comes from the pccl branch this branch is paired with: a
+      # release/vX.Y.Z check runs against the pccl release branch of the same name, so a fix that
+      # already landed there is not masked by a mainline state the release does not have. Feature
+      # branches and pull requests keep testing main, the only branch they share with pccl.
+      - name: Resolve the pccl ref paired with this branch
+        id: pccl-ref
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -e
+          ref=main
+          if [ "${BRANCH}" != "main" ] &&
+             git ls-remote --exit-code --heads https://github.com/t-head/pccl.git "refs/heads/${BRANCH}" >/dev/null 2>&1; then
+            ref="${BRANCH}"
+          elif [ "${BRANCH}" != "main" ]; then
+            case "${BRANCH}" in
+              release/*) echo "::warning::t-head/pccl has no ${BRANCH}; building against main" ;;
+            esac
+          fi
+          echo "pccl ref ${ref} for pccl-tests branch ${BRANCH}"
+          echo "ref=${ref}" >> "${GITHUB_OUTPUT}"
       - uses: actions/checkout@v4
         with:
           repository: t-head/pccl
-          ref: main
+          ref: ${{ steps.pccl-ref.outputs.ref }}
           path: pccl
       - name: Build on PPU
         id: ppu-build
@@ -250,10 +271,29 @@ jobs:
         with:
           fetch-depth: 0
           path: pccl-tests
+      # Same resolution as the build job: the notsm leg has to run against the pccl branch the
+      # build leg used, otherwise a release check would pair a release build with a mainline one.
+      - name: Resolve the pccl ref paired with this branch
+        id: pccl-ref
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -e
+          ref=main
+          if [ "${BRANCH}" != "main" ] &&
+             git ls-remote --exit-code --heads https://github.com/t-head/pccl.git "refs/heads/${BRANCH}" >/dev/null 2>&1; then
+            ref="${BRANCH}"
+          elif [ "${BRANCH}" != "main" ]; then
+            case "${BRANCH}" in
+              release/*) echo "::warning::t-head/pccl has no ${BRANCH}; building against main" ;;
+            esac
+          fi
+          echo "pccl ref ${ref} for pccl-tests branch ${BRANCH}"
+          echo "ref=${ref}" >> "${GITHUB_OUTPUT}"
       - uses: actions/checkout@v4
         with:
           repository: t-head/pccl
-          ref: main
+          ref: ${{ steps.pccl-ref.outputs.ref }}
           path: pccl
       - name: Build and Test on PPU (notsm)
         id: ppu-test-notsm
