@@ -94,6 +94,21 @@ endif
 
 COMMON_OBJ_FILES := $(COMMON_SRC_FILES:%.cu=${DST_DIR}/%.o)
 BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce alltoall alltoallv sendrecv scatter gather hypercube
+
+PCCL_HEADER := $(firstword $(wildcard $(PCCL_HOME)/include/pccl.h $(PPU_INC)/pccl.h /usr/local/include/pccl.h /usr/include/pccl.h))
+COMM_OPS_MIN_PCCL_VERSION := 2300
+COMM_OPS_PCCL_VERSION := $(shell test -n "$(PCCL_HEADER)" && \
+  awk '/^\#define PCCL_(MAJOR|MINOR|PATCH) /{v[$$2]=$$3} END{if (v["PCCL_MAJOR"]!="") print v["PCCL_MAJOR"]*1000+v["PCCL_MINOR"]*100+v["PCCL_PATCH"]}' "$(PCCL_HEADER)")
+COMM_OPS_SUPPORTED := $(shell test -n "$(COMM_OPS_PCCL_VERSION)" && \
+  test "$(COMM_OPS_PCCL_VERSION)" -ge $(COMM_OPS_MIN_PCCL_VERSION) && echo 1)
+ifeq ($(MPI), 1)
+ifeq ($(COMM_OPS_SUPPORTED), 1)
+  BIN_FILES_LIST += comm_ops
+else
+  $(warning Skipping comm_ops_perf: PCCL 2.3.0 or later headers are required)
+endif
+endif
+
 BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_perf)
 
 info:
@@ -126,3 +141,16 @@ ${DST_DIR}/%_perf:${DST_DIR}/%.o ${COMMON_OBJ_FILES}  $(TEST_VERIFIABLE_OBJS)
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(HGCC) -o $@ $^ ${HGLDFLAGS}
+
+ifneq ($(MPI), 1)
+${DST_DIR}/comm_ops_perf:
+	$(error Communicator operations test requires MPI=1)
+else ifneq ($(COMM_OPS_SUPPORTED), 1)
+${DST_DIR}/comm_ops_perf:
+	$(error Communicator operations test requires PCCL 2.3.0 or later headers)
+else
+${DST_DIR}/comm_ops_perf: ${DST_DIR}/comm_ops.o $(TEST_VERIFIABLE_OBJS)
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(HGCC) -o $@ $^ ${HGLDFLAGS}
+endif

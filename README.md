@@ -231,6 +231,62 @@ per MPI process (`-t 1 -g 1`), and consecutive MPI ranks on each node:
 - `NCCL_TESTS_SPLIT_MASK=0x1`: Run two groups containing even and odd MPI
   ranks, respectively.
 
+### Communicator operations (`comm_ops_perf`)
+
+`comm_ops_perf` measures the latency of communicator initialization, split,
+shrink, and grow. Each MPI process uses one PPU and blocking communicators.
+
+Build with `--use_mpi` and PCCL 2.3.0 or later. The MPI build skips this
+executable when the installed PCCL headers are older than 2.3.0.
+
+The following examples use eight MPI ranks to test initialization, Split at a
+fixed communicator size, and Grow with a resize factor of `1.5`:
+
+```shell
+mpirun -np 8 ./build/comm_ops_perf init
+mpirun -np 8 ./build/comm_ops_perf split --sweep-comms fixed
+mpirun -np 8 ./build/comm_ops_perf grow --resize factor-1.5
+```
+
+Select `init`, `split`, `shrink`, or `grow` as the first argument, followed by
+the benchmark options. This executable has its own options; the collective
+arguments above do not apply. Run `./build/comm_ops_perf --help` for the full list.
+
+- `-i, --iterations <N>` Timed iterations. Default: `2`.
+- `-w, --warmup <N>` Untimed warm-up iterations. Default: `1`.
+- `-s, --sweep-comms <factor-N|step-N|fixed>` Sweep communicator sizes by a
+  factor or a fixed step, or use `fixed` to test only the starting size.
+  Default: `factor-2`.
+- `-b, --sweep-begin <ranks>` Starting communicator size. Default: all MPI ranks.
+- `-e, --sweep-end <ranks>` Ending communicator size. Default: `1`.
+- `-r, --resize <factor-N|step-N>` Resize by a factor or a number of ranks for
+  split, shrink, and grow. Default: `factor-2`.
+- `-S, --share` Enable `splitShare` and `shrinkShare` on the parent communicator.
+  Default: disabled.
+- `-a, --abort` Use CommAbort for teardown. Shrink also uses `PCCL_SHRINK_ABORT`.
+  Cannot be combined with `--share` in `split` mode. In `shrink` mode, resource
+  sharing is disabled when `--abort` is set. Default: disabled.
+- `-c, --check <0/1>` Validate AllReduce results. Default: `1`.
+
+The summary reports maximum, average, and standard deviation of operation times
+in milliseconds, separately for each parent or child communicator. `Comm size`
+is the actual communicator size, `Color` identifies the Split group, and
+`Sweep size` is the number of MPI ranks used for that configuration.
+The AllReduce timer measures the host call, not completion on the PPU.
+`--all-timers` also reports the separate stream synchronization call.
+
+Split, Shrink, and Grow skip sizes whose resize would leave either group empty.
+A run fails if every size is skipped. AllReduce results are checked against the
+`verifiable` reference using the expected MPI membership and a different seed
+for each Split group. `#wrong: 0` is reported only after results have been
+checked. Failures report the rank, group, sweep size, and seed. Input preparation
+and verification are outside the measured intervals.
+
+By default, each process selects the device matching its local MPI rank.
+`NCCL_TESTS_DEVICE=-1` keeps this automatic selection; a nonnegative value
+selects a visible device index. Set it to `0` when each process is given its own
+single visible PPU.
+
 ## Copyright
 
 Licensed under the BSD 3-Clause license. See [LICENSE.txt](LICENSE.txt).
