@@ -11,7 +11,7 @@
 #include "args.h"
 #include "gin_context.h"
 
-template <bool skipCreditCheck, bool strongSignal, pcclGinResourceSharingMode rsm>
+template <bool skipCreditCheck, bool strongSignal, pcclGinResourceSharingMode rsm, bool setSignal = false>
 __global__ void ginPutSignalPingPongKernel(pcclDevComm comm, pcclWindow_t devWindow, size_t numElems, int iters,
                                            int queueDepth, int wqesPerOp) {
   pcclTeam team = pcclTeamWorld(comm);
@@ -26,21 +26,18 @@ __global__ void ginPutSignalPingPongKernel(pcclDevComm comm, pcclWindow_t devWin
   const int flushEvery = (queueDepth / 2) / wqesPerOp < 1 ? 1 : (queueDepth / 2) / wqesPerOp;
 
   constexpr pcclGinSignal_t signalId = 0;
-  uint64_t expected = 0;
 
   for (int i = 0; i < iters; i++) {
-    expected++;
-    /* PCCL does not yet distinguish weak/strong signal actions. */
-    (void)strongSignal;
+    const uint64_t expected = setSignal ? ginSetValue(i) : static_cast<uint64_t>(i) + 1;
     if (comm.rank == 0) {
       gin.waitSignal(pcclCoopThread{}, signalId, expected);
-      gin.put(team, 1, dbuf, sbuf, numElems, pcclGin_SignalInc{signalId}, pcclGin_None{}, pcclCoopThread{},
+      gin.put(team, 1, dbuf, sbuf, numElems, ginSignalAction<setSignal>(signalId, i), pcclGin_None{}, pcclCoopThread{},
               pcclGin_None{}, hggc::thread_scope_thread, hggc::thread_scope_thread, optFlags);
       if constexpr (skipCreditCheck) {
         if (i % flushEvery == 0) gin.flush(pcclCoopThread{});
       }
     } else {
-      gin.put(team, 0, dbuf, sbuf, numElems, pcclGin_SignalInc{signalId}, pcclGin_None{}, pcclCoopThread{},
+      gin.put(team, 0, dbuf, sbuf, numElems, ginSignalAction<setSignal>(signalId, i), pcclGin_None{}, pcclCoopThread{},
               pcclGin_None{}, hggc::thread_scope_thread, hggc::thread_scope_thread, optFlags);
       if constexpr (skipCreditCheck) {
         if (i % flushEvery == 0) gin.flush(pcclCoopThread{});
@@ -48,17 +45,16 @@ __global__ void ginPutSignalPingPongKernel(pcclDevComm comm, pcclWindow_t devWin
       gin.waitSignal(pcclCoopThread{}, signalId, expected);
     }
   }
-  gin.resetSignal(signalId);
   gin.flush(pcclCoopThread{});
 }
 
-template <pcclGinResourceSharingMode rsm>
+template <pcclGinResourceSharingMode rsm, bool setSignal>
 static void ginPutSignalLatencyPingPongLaunchRsm(const ginContext_t* ctx, hggcStream_t stream,
                                                   const ginArgs_t* args, size_t numElems, int iters) {
   const int queueDepth = args->queueDepth;
   const int wqesPerOp = pcclTestGinWqesPerOp(numElems * sizeof(int), pcclGinOpPutSignal);
 #define LAUNCH_PING_PONG_PUT_SIGNAL(SKIP, STRONG) \
-  ginPutSignalPingPongKernel<SKIP, STRONG, rsm><<<1, 1, 0, stream>>>( \
+  ginPutSignalPingPongKernel<SKIP, STRONG, rsm, setSignal><<<1, 1, 0, stream>>>( \
     ctx->dcomm, ctx->devBufWindow, numElems, iters, queueDepth, wqesPerOp)
 
   if (args->ginSkipCreditCheck) {
@@ -74,9 +70,11 @@ static void ginPutSignalLatencyPingPongLaunchRsm(const ginContext_t* ctx, hggcSt
 }
 
 void pcclTestGinPutSignalLatencyPingPongLaunch(const ginContext_t* ctx, hggcStream_t stream, const ginArgs_t* args, size_t numElems, int iters) {
-  if (args->ginRsm == pcclGinRsmCta) {
-    ginPutSignalLatencyPingPongLaunchRsm<PCCL_GIN_RESOURCE_SHARING_CTA>(ctx, stream, args, numElems, iters);
-  } else {
-    ginPutSignalLatencyPingPongLaunchRsm<PCCL_GIN_RESOURCE_SHARING_GPU>(ctx, stream, args, numElems, iters);
-  }
+  pcclTestGinDispatchSignal(args->signalType, [&](auto setSignal) {
+    if (args->ginRsm == pcclGinRsmCta) {
+      ginPutSignalLatencyPingPongLaunchRsm<PCCL_GIN_RESOURCE_SHARING_CTA, decltype(setSignal)::value>(ctx, stream, args, numElems, iters);
+    } else {
+      ginPutSignalLatencyPingPongLaunchRsm<PCCL_GIN_RESOURCE_SHARING_GPU, decltype(setSignal)::value>(ctx, stream, args, numElems, iters);
+    }
+  });
 }

@@ -31,13 +31,14 @@ static void printUsage(const char* argv0) {
     "  --gin_skip_credit_check          Skip GIN credit check (default: off)\n"
     "  --gin_op <put|put_signal|put_counter>  GIN operation to benchmark, for binaries covering more than one "
     "(default: put)\n"
-    "  --gin_strong_signal              Use a Strong signal instead of Weak, for tests that support both (default: off, i.e. weak; pccl issues both as pcclGin_SignalInc, which is strong)\n"
+    "  --gin_strong_signal              Compatibility flag for signal tests; does not change the action\n"
     "  --gin_ag                         Enable pcclGinOptFlagsAggregateRequests on throughput tests (default: off)\n"
     "  --gin_bd                         Bidirectional bandwidth: both ranks send to each other; reported metric is the sum of each rank's average (throughput tests only, default: off)\n"
     "  --local_mem_type <device|host>   Memory type of local rank (default: device)\n"
     "  --remote_mem_type <device|host>  Memory type of remote rank (default: device)\n"
     "  --gin_rsm <thread|cta|gpu>       GIN resource sharing mode (default: gpu; thread is unavailable with the current PCCL interface)\n"
-    "  --gin_tx_depth <depth>           GIN Send queue depth: 1..32768 (default: 1024; subject to per-operation and batch limits)\n",
+    "  --gin_tx_depth <depth>           GIN Send queue depth: 1..32768 (default: 1024; subject to per-operation and batch limits)\n"
+    "  --gin_signal_type <inc|set>      Remote action for SIGNAL and PUT_SIGNAL (default: inc)\n",
     argv0, sizeof(int));
 }
 
@@ -144,6 +145,8 @@ void pcclTestGinParseArgs(int argc, char** argv, ginArgs_t* args) {
   args->localMemoryType = pcclGinMemoryDevice;
   args->remoteMemoryType = pcclGinMemoryDevice;
   args->queueDepth = 1024;
+  args->queueDepthSet = false;
+  args->signalType = pcclTestSignalUnset;
   args->ginRsm = pcclGinRsmUnset;
   args->ginOp = pcclGinOpUnset;
 
@@ -163,6 +166,7 @@ void pcclTestGinParseArgs(int argc, char** argv, ginArgs_t* args) {
     {"gin_tx_depth", required_argument, NULL, 0},
     {"num_ctas", required_argument, NULL, 'c'},
     {"num_threads", required_argument, NULL, 't'},
+    {"gin_signal_type", required_argument, NULL, 0},
     {NULL, 0, NULL, 0}
   };
 
@@ -197,6 +201,14 @@ void pcclTestGinParseArgs(int argc, char** argv, ginArgs_t* args) {
           args->ginRsm = parseRsm(optarg);
         } else if (strcmp(longOpts[idx].name, "gin_tx_depth") == 0) {
           args->queueDepth = parseIntArg(optarg, "--gin_tx_depth");
+          args->queueDepthSet = true;
+        } else if (strcmp(longOpts[idx].name, "gin_signal_type") == 0) {
+          if (strcmp(optarg, "inc") == 0) args->signalType = pcclTestSignalInc;
+          else if (strcmp(optarg, "set") == 0) args->signalType = pcclTestSignalSet;
+          else {
+            fprintf(stderr, "Error: invalid --gin_signal_type '%s' (expected inc or set)\n", optarg);
+            exit(EXIT_FAILURE);
+          }
         }
         break;
       default:
@@ -328,6 +340,21 @@ void pcclTestGinConfigureArgs(ginArgs_t* args, const ginTestCaps_t* caps) {
   configureOp(args, caps);
 
   const bool signalsInUse = caps->isSignalOp || args->ginOp == pcclGinOpPutSignal;
+  if (!signalsInUse && args->signalType != pcclTestSignalUnset) {
+    fprintf(stderr, "Error: --gin_signal_type requires SIGNAL or --gin_op put_signal\n");
+    exit(EXIT_FAILURE);
+  }
+  if (signalsInUse && args->signalType == pcclTestSignalUnset) args->signalType = pcclTestSignalInc;
+  if (args->signalType == pcclTestSignalSet) {
+#if !PCCL_TEST_GIN_HAS_SIGNAL_SET
+    fprintf(stderr, "Error: this build's PCCL device headers lack the GIN SET extension\n");
+    exit(EXIT_FAILURE);
+#endif
+    if (args->numCtas > INT_MAX / args->numThreads) {
+      fprintf(stderr, "Error: too many signal writers for SET\n");
+      exit(EXIT_FAILURE);
+    }
+  }
   if (!signalsInUse && args->ginStrongSignal) {
     fprintf(stderr,
       "Error: --gin_strong_signal is only supported by the signal tests and by put tests run with "

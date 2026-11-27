@@ -12,7 +12,7 @@
 #include "gin_context.h"
 
 template <bool skipCreditCheck, bool aggregateRequests, bool strongSignal,
-          pcclGinResourceSharingMode rsm>
+          pcclGinResourceSharingMode rsm, bool setSignal = false>
 __global__ void ginSignalBwKernel(pcclDevComm comm, pcclWindow_t devWindow, int iters, int queueDepth) {
   const int tag = blockIdx.x;
   pcclTeam team = pcclTeamWorld(comm);
@@ -26,24 +26,22 @@ __global__ void ginSignalBwKernel(pcclDevComm comm, pcclWindow_t devWindow, int 
   const int wqesPerIter = blockDim.x * wqesPerOp;
   const int flushEvery = (queueDepth / 2) / wqesPerIter < 1 ? 1 : (queueDepth / 2) / wqesPerIter;
 
-  constexpr pcclGinSignal_t signalId = 0;
+  const pcclGinSignal_t signalId = setSignal ? threadIdx.x : 0;
 
   for (int i = 0; i < iters; i++) {
-    /* PCCL does not yet distinguish weak/strong signal actions. */
-    (void)strongSignal;
     if constexpr (aggregateRequests) {
       if (threadIdx.x < blockDim.x - 1) {
-        gin.signal(team, peer, pcclGin_SignalInc{signalId}, pcclCoopThread{}, pcclGin_None{},
+        gin.signal(team, peer, ginSignalAction<setSignal>(signalId, i), pcclCoopThread{}, pcclGin_None{},
                    hggc::thread_scope_thread, hggc::thread_scope_thread,
                    optFlags | pcclGinOptFlagsAggregateRequests);
       }
       __syncthreads();
       if (threadIdx.x == blockDim.x - 1) {
-        gin.signal(team, peer, pcclGin_SignalInc{signalId}, pcclCoopThread{}, pcclGin_None{},
+        gin.signal(team, peer, ginSignalAction<setSignal>(signalId, i), pcclCoopThread{}, pcclGin_None{},
                    hggc::thread_scope_thread, hggc::thread_scope_thread, optFlags);
       }
     } else {
-      gin.signal(team, peer, pcclGin_SignalInc{signalId}, pcclCoopThread{}, pcclGin_None{},
+      gin.signal(team, peer, ginSignalAction<setSignal>(signalId, i), pcclCoopThread{}, pcclGin_None{},
                  hggc::thread_scope_thread, hggc::thread_scope_thread, optFlags);
     }
     if constexpr (skipCreditCheck) {
@@ -55,12 +53,12 @@ __global__ void ginSignalBwKernel(pcclDevComm comm, pcclWindow_t devWindow, int 
   gin.flush(pcclCoopCta{});
 }
 
-template <pcclGinResourceSharingMode rsm>
+template <pcclGinResourceSharingMode rsm, bool setSignal>
 static void ginSignalBWLaunchRsm(const ginContext_t* ctx, hggcStream_t stream,
                                   const ginArgs_t* args, int iters) {
   const int queueDepth = args->queueDepth;
 #define LAUNCH_BW_SIGNAL(SKIP, AG, STRONG) \
-  ginSignalBwKernel<SKIP, AG, STRONG, rsm><<<args->numCtas, args->numThreads, 0, stream>>>(ctx->dcomm, ctx->devBufWindow, iters, queueDepth)
+  ginSignalBwKernel<SKIP, AG, STRONG, rsm, setSignal><<<args->numCtas, args->numThreads, 0, stream>>>(ctx->dcomm, ctx->devBufWindow, iters, queueDepth)
 
   if (args->ginSkipCreditCheck) {
     if (args->ginAggregateRequests) {
@@ -85,9 +83,11 @@ static void ginSignalBWLaunchRsm(const ginContext_t* ctx, hggcStream_t stream,
 }
 
 void pcclTestGinSignalBWLaunch(const ginContext_t* ctx, hggcStream_t stream, const ginArgs_t* args, size_t numElems, int iters) {
-  if (args->ginRsm == pcclGinRsmCta) {
-    ginSignalBWLaunchRsm<PCCL_GIN_RESOURCE_SHARING_CTA>(ctx, stream, args, iters);
-  } else {
-    ginSignalBWLaunchRsm<PCCL_GIN_RESOURCE_SHARING_GPU>(ctx, stream, args, iters);
-  }
+  pcclTestGinDispatchSignal(args->signalType, [&](auto setSignal) {
+    if (args->ginRsm == pcclGinRsmCta) {
+      ginSignalBWLaunchRsm<PCCL_GIN_RESOURCE_SHARING_CTA, decltype(setSignal)::value>(ctx, stream, args, iters);
+    } else {
+      ginSignalBWLaunchRsm<PCCL_GIN_RESOURCE_SHARING_GPU, decltype(setSignal)::value>(ctx, stream, args, iters);
+    }
+  });
 }
